@@ -1,0 +1,15 @@
+# Modules
+lightning==2.0.0
+pandas==2.0.0
+scipy==1.10.1
+torch==2.0.0
+torchvision==0.15.1
+
+# Formatting and Linting
+black==23.1.0
+mypy==1.1.1
+pyproject-flake8==6.0.0.post1
+
+# Type stubs
+pandas-stubs
+types-pillow

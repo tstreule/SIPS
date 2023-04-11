@@ -1,0 +1,54 @@
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+
+[tool.flake8]
+# Those settings only work with 'pyproject-flake8' (pflake8)
+ignore = [
+    "E203",  # ignore whitespace before ':' (for black)
+    "E501",  # line to long
+    "W503",  # line break before binary operator
+]
+per-file-ignores = """
+    __init__.py: F401  # module imported but unused
+"""
+max-line-length = 88
+ban-relative-imports = "parents"
+exclude = ["venv", ".venv", "env", ".env"]
+
+[tool.mypy]
+# Start off with these
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+no_implicit_optional = true
+# Getting these passing should be easy
+strict_equality = true
+strict_concatenate = true
+# Strongly recommend enabling this one as soon as you can
+check_untyped_defs = true
+# These shouldn't be too much additional work, but may be tricky to
+# get passing if you use a lot of untyped libraries
+disallow_subclassing_any = true
+disallow_untyped_decorators = true
+disallow_any_generics = true
+# These next few are various gradations of forcing use of type annotations
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+disallow_untyped_defs = false
+# This one isn't too hard to get passing, but return on investment is lower
+no_implicit_reexport = true
+# This one can be tricky to get passing if you use a lot of untyped libraries
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = "lightning.*"
+ignore_missing_imports = true
+disallow_subclassing_any = false
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*", "mpl_toolkits.*", "scipy.*"]
+ignore_missing_imports = true

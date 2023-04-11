@@ -1,0 +1,33 @@
+{
+  // Linting
+  "python.linting.enabled": true,
+  "python.linting.lintOnSave": true,
+  "python.linting.banditEnabled": false,
+  "python.linting.flake8Enabled": true,
+  "python.linting.flake8Path": "pflake8",
+  "python.linting.flake8Args": ["--config", "pyproject.toml"],
+  "python.linting.mypyEnabled": true,
+  "python.linting.mypyArgs": ["--config-file", "pyproject.toml"],
+  "python.linting.pylintEnabled": false,
+  // Formatting
+  "editor.formatOnSave": true,
+  // Formatting: Python
+  "python.formatting.provider": "black",
+  "python.formatting.blackArgs": ["--line-length=88"],
+  "isort.args": ["--profile", "black"],
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": true
+    }
+  },
+  // Formatting: Markdown
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  // Formatting: JSON with Comments
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnType": true
+  }
+}
