@@ -508,16 +508,6 @@ class PlanarPosePlanner:
         self.debug("next_move:", [surge, sway, yaw], "\n")
         return surge, sway, yaw
 
-    def _get_next_yaw(self) -> float:
-        # Get min/max yaw, given the min/max yaw limit
-        min_yaw = (self.yawlim[0] - self.cur_yaw + np.pi) % (2 * np.pi) - np.pi
-        max_yaw = (self.yawlim[1] - self.cur_yaw) % (2 * np.pi)
-        # Keep yaw within the allowed min/max parameter
-        min_yaw = max(-self.max_yaw, min_yaw)
-        max_yaw = min(self.max_yaw, max_yaw)
-
-        return self.rng.uniform(min_yaw, max_yaw)
-
     def _get_min_max_translation(
         self, min_: float, max_: float, alpha: float
     ) -> tuple[float, float]:
@@ -603,23 +593,59 @@ class PlanarPosePlanner:
         )
         return self.rng.uniform(min_sway, max_sway)
 
+    def _get_next_yaw(self) -> float:
+        # Get min/max yaw, given the min/max yaw limit
+        min_yaw = (self.yawlim[0] - self.cur_yaw + np.pi) % (2 * np.pi) - np.pi
+        max_yaw = (self.yawlim[1] - self.cur_yaw) % (2 * np.pi)
+        # Keep yaw within the allowed min/max parameter
+        min_yaw = max(-self.max_yaw, min_yaw)
+        max_yaw = min(self.max_yaw, max_yaw)
+
+        return self.rng.uniform(min_yaw, max_yaw)
+
 
 # ==============================================================================
 # Main
 
 
-def main():
-    # # Dummy
-    # poses = make_dummy_poses()
-    # poses.to_csv(Path(__file__).parent / "dummy_pitch=0deg_roll=0deg.csv")
-    # CameraPoseVisualizer().plot(poses)
+def main_dummy() -> None:
+    """
+    Generate dummy poses, save to file and visualize.
 
+    """
+    poses = make_dummy_poses()
+    poses.to_csv(Path(__file__).parent / "dummy_pitch=0deg_roll=0deg.csv")
+    CameraPoseVisualizer().plot(poses)
+
+
+def main(
+    pitch: int | list[int] = 0,
+    roll: int | list[int] = 0,
+    save_dir: str | Path | None = None,
+) -> None:
+    """
+    Generate poses and save to file.
+
+    Parameters
+    ----------
+    pitch : int | list[int], optional
+        Pitch of initial position, by default 0
+    roll : int | list[int], optional
+        Roll of initial position, by default 0
+    save_dir : str | Path | None, optional
+        Whether to visualize or save as CSV file, by default None
+        If None, will visualize the poses.
+        If str or Path, the generated poses will be stored in there.
+
+    """
+    pitch_list = pitch if isinstance(pitch, list) else [pitch]
+    roll_list = roll if isinstance(roll, list) else [roll]
     n_movements = 200
     planner_kwargs = dict(
         xlim=2000, ylim=2000, yawlim=45, max_surge=800, max_sway=800, max_yaw=30
     )
-    for pitch in [0, 5, 10, 15, 20, 25, 30, 35, 40, 45]:
-        for roll in [-20, -15, -10, -5, 0, 5, 10, 15, 20]:
+    for pitch in pitch_list:
+        for roll in roll_list:
             seed = 1234 + (pitch * roll)
 
             # Make random poses
@@ -627,14 +653,17 @@ def main():
             planner = PlanarPosePlanner(**planner_kwargs, seed=seed)  # type: ignore
             poses = planner.get_random_poses(init_pose, n_movements=n_movements)
 
-            # # Visualize
-            # lim = (-2000, 2000)
-            # CameraPoseVisualizer(200, xlim=lim, ylim=lim, zlim=lim).plot(poses)
-
-            # Save data
-            filename = f"movements_pitch={pitch}deg_roll={roll}deg.csv"
-            poses.to_csv(filename)
+            if not save_dir:
+                # Visualize
+                lim = (-2000, 2000)
+                CameraPoseVisualizer(300, xlim=lim, ylim=lim, zlim=lim).plot(poses)
+                return
+            else:
+                # Save data
+                filename = f"movements_pitch={pitch}deg_roll={roll}deg.csv"
+                poses.to_csv(Path(save_dir) / filename)
 
 
 if __name__ == "__main__":
-    main()
+    # main_dummy()
+    main(pitch=30, roll=0)
