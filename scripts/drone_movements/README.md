@@ -8,7 +8,7 @@ Because of the sonar construction, it is not possible to disambiguate the angle 
 
 ## Definition
 
-We define drone movements as follows:
+Drone movements are translations (surge, sway, heave) and rotations (roll, pitch, yaw). See the image below as a reference. However, note that we assume the _z-axis pointing "upwards"_ and the _y-axis pointing to the "left"_ instead of "downwards" and "right", respectively.
 
 ![drone movements](/imgs/drone_movements.png)
 
@@ -19,9 +19,9 @@ The generated output is in form of a CSV file with the following columns:
 - `x[mm]`: x position in mm
 - `y[mm]`: y position in mm
 - `z[mm]`: z position in mm
-- `roll_x[deg]`: rotation around x-axis in degree
-- `pitch_x[deg]`: rotation around y-axis in degree
-- `yaw_x[deg]`: rotation around z-axis in degree
+- `x[deg]`: rotation around x-axis in degree
+- `x[deg]`: rotation around y-axis in degree
+- `x[deg]`: rotation around z-axis in degree
 
 The filename indicates the initial pitch and roll of the drone.
 
