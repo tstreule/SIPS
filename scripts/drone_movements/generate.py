@@ -32,6 +32,11 @@ from scipy.spatial.transform import Rotation as R
 class CameraPose:
     """
     Incorporates an extrinsic parameter matrix for camera pose.
+
+    Parameters
+    ----------
+    extrinsic_matrix : npt.NDArray[np.float_] | None, optional
+        Extrinsic 4x4 camera matrix, by default None
     """
 
     def __init__(self, extrinsic_matrix: npt.NDArray[np.float_] | None = None):
@@ -41,27 +46,14 @@ class CameraPose:
             self.extrinsic_matrix[:] = extrinsic_matrix
 
     @staticmethod
-    def from_euler(
+    def from_vector(
         vector: npt.NDArray[np.float_], degrees: bool = True
     ) -> "CameraPose":
         assert vector.shape == (6,)
         pose = CameraPose()
         pose.position = vector[:3]
-        pose.rotation = R.from_euler("xyz", vector[3:], degrees=degrees).as_matrix()
+        pose.rotation = R.from_rotvec(vector[3:], degrees=degrees).as_matrix()  # type: ignore
         return pose
-
-    # ----------------------------------------------------------------------
-    # Utils
-
-    def as_extrinsic(self) -> npt.NDArray[np.float_]:
-        return self.extrinsic_matrix
-
-    def as_euler(self, degrees: bool = True) -> npt.NDArray[np.float_]:
-        rotation = R.from_matrix(self.rotation).as_euler("xyz", degrees=degrees)
-        return np.concatenate([self.position, rotation])
-
-    def copy(self) -> "CameraPose":
-        return CameraPose(self.as_extrinsic().copy())
 
     # ----------------------------------------------------------------------
     # Properties
@@ -84,6 +76,24 @@ class CameraPose:
         if not np.allclose(rotation, rot) or rotation.shape != (3, 3):
             raise ValueError("Invalid rotation matrix")
         self.extrinsic_matrix[:3, :3] = rotation
+
+    # ----------------------------------------------------------------------
+    # Utils
+
+    def copy(self) -> "CameraPose":
+        return CameraPose(self.as_matrix().copy())
+
+    def as_matrix(self) -> npt.NDArray[np.float_]:
+        return self.extrinsic_matrix
+
+    def as_vector(self, degrees: bool = True) -> npt.NDArray[np.float_]:
+        return np.concatenate([self.position, self.get_rotvec(degrees=degrees)])
+
+    def get_rotvec(self, degrees: bool = True) -> npt.NDArray[np.float_]:
+        return R.from_matrix(self.rotation).as_rotvec(degrees=degrees)  # type: ignore
+
+    def get_quat(self) -> npt.NDArray[np.float_]:
+        return R.from_matrix(self.rotation).as_quat()
 
     # ----------------------------------------------------------------------
     # Absolute transformations
@@ -127,6 +137,11 @@ class CameraPose:
 class CameraPoseTracker:
     """
     Keeps track of the movement history of camera poses.
+
+    Parameters
+    ----------
+    init_pose : CameraPose
+        Initial pose
     """
 
     def __init__(self, init_pose: CameraPose) -> None:
@@ -199,8 +214,8 @@ class CameraPoseTracker:
     # Export and import
 
     def as_pandas(self) -> pd.DataFrame:
-        columns = "x[mm],y[mm],z[mm],roll_x[deg],pitch_y[deg],yaw_z[deg]".split(",")
-        data = pd.DataFrame([p.as_euler() for p in self.history], columns=columns)
+        columns = ["x[m]", "y[m]", "z[m]", "x[deg]", "y[deg]", "z[deg]"]
+        data = pd.DataFrame([p.as_vector() for p in self.history], columns=columns)
         return data
 
     @staticmethod
@@ -209,15 +224,15 @@ class CameraPoseTracker:
         init_row = data.iloc[0]
         data = data.iloc[1:]
         # Initialize tracker
-        init_pose = CameraPose.from_euler(init_row.to_numpy(), degrees)
+        init_pose = CameraPose.from_vector(init_row.to_numpy(), degrees)
         poses = CameraPoseTracker(init_pose)
         # Extract all other rows
         for _, row in data.iterrows():
-            poses.history.append(CameraPose.from_euler(row.to_numpy(), degrees))
+            poses.history.append(CameraPose.from_vector(row.to_numpy(), degrees))
         return poses
 
-    def to_csv(self, filepath: str | Path) -> None:
-        self.as_pandas().to_csv(filepath)
+    def to_csv(self, filepath: str | Path, sep: str = ",") -> None:
+        self.as_pandas().to_csv(filepath, index=False, sep=sep)
 
 
 class CameraPoseVisualizer:
@@ -247,13 +262,13 @@ class CameraPoseVisualizer:
 
     def __init__(
         self,
-        visual_range: float = 5,
+        visual_range: float = 0.3,
         azimuth_fov: float = 30,
         elevation_fov: float = 15,
         degrees: bool = True,
-        xlim: tuple[float, float] = (-20, 20),
-        ylim: tuple[float, float] = (-20, 20),
-        zlim: tuple[float, float] = (-20, 20),
+        xlim: tuple[float, float] = (-1, 1),
+        ylim: tuple[float, float] = (-1, 1),
+        zlim: tuple[float, float] = (-1, 1),
         figsize: tuple[float, float] = (7, 7),
     ):
         # Define length and width of pyramid (i.e., camera view)
@@ -340,7 +355,7 @@ class CameraPoseVisualizer:
             ]
         )
         # Adjust the pose of the vertices
-        vertex_trsf = (vertex_std @ pose.as_extrinsic().T)[:, :-1]
+        vertex_trsf = (vertex_std @ pose.as_matrix().T)[:, :-1]
         meshes = [
             [vertex_trsf[0], vertex_trsf[1], vertex_trsf[2]],
             [vertex_trsf[0], vertex_trsf[2], vertex_trsf[3]],
@@ -378,24 +393,36 @@ def make_dummy_poses() -> CameraPoseTracker:
     return poses
 
 
-class PlanarPosePlanner:
+class PosePlanner3D:
     """
-    Planner for random camera poses with planar movements.
+    Planner for random camera poses.
 
     Parameters
     ----------
-    xlim : tuple[float, float], optional
-        Left and right sway limit, by default (-20, 20)
-    ylim : tuple[float, float], optional
-        Forward and backward surge limit, by default (-20, 20)
-    yawlim : tuple[float, float], optional
-        Left and right camera angle limit, by default (-45, 45)
+    x_lim : float | tuple[float, float], optional
+        Limits left and right position, by default (-1, 1)
+    y_lim : float | tuple[float, float], optional
+        Limits front and back position, by default (-1, 1)
+    z_lim : float | tuple[float, float], optional
+        Limits top and bottom position, by default (-1, 1)
+    rot_x_lim : float | tuple[float, float], optional
+        Limits rotation around x-axis, by default (-45, 45)
+    rot_y_lim : float | tuple[float, float], optional
+        Limits rotation anround y-axis, by default (-45, 45)
+    rot_z_lim : float | tuple[float, float], optional
+        Limits rotation around z-axis, by default (-45, 45)
     max_surge : float, optional
-        Maximal surge between two subsequent camera poses, by default 10
+        Maximal surge between two subsequent camera poses, by default 0.5
     max_sway : float, optional
-        Maximal sway between two subsequent camera poses, by default 10
+        Maximal sway between two subsequent camera poses, by default 0.5
+    max_heave : float, optional
+        Maximal heave between two subsequent camera poses, by default 0.5
+    max_roll : float, optional
+        Maximal roll between two subsequent camera poses, by default 10
+    max_pitch : float, optional
+        Maximal pitch between two subsequent camera poses, by default 10
     max_yaw : float, optional
-        Maximal yaw between two subsequent camera poses, by default 45
+        Maximal yaw between two subsequent camera poses, by default 10
     degrees : bool, optional
         If True, it assumes that 'yawlim' and 'max_yaw' are in degrees, by default True
     seed : int | None, optional
@@ -406,43 +433,72 @@ class PlanarPosePlanner:
 
     def __init__(
         self,
-        xlim: float | tuple[float, float] = (-20, 20),
-        ylim: float | tuple[float, float] = (-20, 20),
-        yawlim: float | tuple[float, float] = (-45, 45),
-        max_surge: float = 10,
-        max_sway: float = 10,
-        max_yaw: float = 30,
+        x_lim: float | tuple[float, float] = (-1, 1),
+        y_lim: float | tuple[float, float] = (-1, 1),
+        z_lim: float | tuple[float, float] = (-1, 1),
+        rot_x_lim: float | tuple[float, float] = (-45, 45),
+        rot_y_lim: float | tuple[float, float] = (-45, 45),
+        rot_z_lim: float | tuple[float, float] = (-45, 45),
+        max_surge: float = 0.5,
+        max_sway: float = 0.5,
+        max_heave: float = 0.5,
+        max_roll: float = 10,
+        max_pitch: float = 10,
+        max_yaw: float = 10,
         degrees: bool = True,
         seed: int | None = None,
         verbose: int = 0,
     ):
         # Set camera position and angle boundaries
-        if isinstance(xlim, (int, float)):
-            xlim = (-np.abs(xlim), np.abs(xlim))
-        if isinstance(ylim, (int, float)):
-            ylim = (-np.abs(ylim), np.abs(ylim))
-        if isinstance(yawlim, (int, float)):
-            yawlim = (-np.abs(yawlim), np.abs(yawlim))
-        self.xlim = xlim
-        self.ylim = ylim
-        if degrees:  # convert to radians
-            yawlim = (yawlim[0] / 180 * np.pi, yawlim[1] / 180 * np.pi)
-        self.yawlim = (
-            (yawlim[0] + np.pi) % (2 * np.pi) - np.pi,  # normalize to [-pi, 0]
-            yawlim[1] % (2 * np.pi),  # normalize to [0, pi]
-        )
+        self.x_lim = self._check_lim(x_lim)
+        self.y_lim = self._check_lim(y_lim)
+        self.z_lim = self._check_lim(z_lim)
+        self.rot_x_lim = self._check_rot_lim(rot_x_lim, degrees)
+        self.rot_y_lim = self._check_rot_lim(rot_y_lim, degrees)
+        self.rot_z_lim = self._check_rot_lim(rot_z_lim, degrees)
+
         # Set movability parameters
-        self.max_surge = max_surge
-        self.max_sway = max_sway
-        self.max_yaw = (max_yaw if not degrees else max_yaw / 180 * np.pi) % (2 * np.pi)
+        self.max_surge = abs(max_surge)
+        self.max_sway = abs(max_sway)
+        self.max_heave = abs(max_heave)
+        if not degrees:
+            max_roll *= 180 / np.pi
+            max_pitch *= 180 / np.pi
+            max_yaw *= 180 / np.pi
+        self.max_roll = abs(max_roll)
+        self.max_pitch = abs(max_pitch)
+        self.max_yaw = abs(max_yaw)
+
         # Set initial state
-        self.cur_x = 0.0
-        self.cur_y = 0.0
-        self.cur_yaw = 0.0
+        self.cur_pose = CameraPose()
+
         # Other settings
+        # self.degrees = True
         self.seed = seed
         self.rng = np.random.default_rng(seed)
         self.verbose = verbose
+
+    def _check_lim(self, lim: float | tuple[float, float]) -> tuple[float, float]:
+        if isinstance(lim, (int, float)):
+            lower = -abs(lim)
+            upper = abs(lim)
+        else:
+            lower, upper = lim
+            assert upper - lower >= 0, "upper - lower < 0"
+        return lower, upper
+
+    def _check_rot_lim(
+        self, lim: float | tuple[float, float], degrees: bool
+    ) -> tuple[float, float]:
+        lower, upper = self._check_lim(lim)
+        # Convert to degrees
+        if not degrees:
+            lower *= 180 / np.pi
+            upper *= 180 / np.pi
+        # Do not exceed [-180, 180] (required for _get_next_{roll, pitch, yaw})
+        lower = max(lower, -180)
+        upper = min(upper, 180)
+        return lower, upper
 
     def debug(self, *args, **kwargs) -> None:
         """Debug print"""
@@ -475,195 +531,317 @@ class PlanarPosePlanner:
             # Get random movement within the allowed limits.
             # Note that we have to follow the same update order as in move_rel().
             # Otherwise, we will have wrong estimates for the current relative pose.
-            surge, sway, yaw = self._get_next_movement(poses)
-            poses.move_rel(surge=surge, sway=sway, yaw=yaw, degrees=False)
+            move_kwargs = self._get_next_movement(poses)
+            poses.move_rel(**move_kwargs, degrees=True)
 
         return poses
 
-    def _get_next_movement(
-        self, poses: CameraPoseTracker
-    ) -> tuple[float, float, float]:
+    def _get_next_movement(self, poses: CameraPoseTracker) -> dict[str, float]:
         # Debug print to check whether current position estimate is correct.
         # Works only if the initial pose starts at (x, y, z) = (0, 0, 0) and has
         # no initial rotations.
-        self.debug("estimate:", [self.cur_x, self.cur_y, 0.0, 0.0, 0.0, self.cur_yaw])
-        self.debug("true:    ", poses.history[-1].as_euler(degrees=False).tolist())
+        self.debug("estimate:", self.cur_pose.as_vector(degrees=True).round(4))
+        self.debug("true:    ", poses.history[-1].as_vector(degrees=True).round(4))
 
         # Get and update surge
         surge = self._get_next_surge()
-        self.cur_x += surge * np.cos(self.cur_yaw)
-        self.cur_y += surge * np.sin(self.cur_yaw)
+        self.cur_pose.surge(surge)
+        self.debug(f"    -> surge={surge:>9.4f}:", self.cur_pose.position.round(4))
 
         # Get and update sway
-        # Note that we adjust the angle by 90 degrees (also within _get_next_sway)
         sway = self._get_next_sway()
-        self.cur_x += sway * np.cos(self.cur_yaw + np.pi / 2)
-        self.cur_y += sway * np.sin(self.cur_yaw + np.pi / 2)
+        self.cur_pose.sway(sway)
+        self.debug(f"    -> sway ={sway:>9.4f}:", self.cur_pose.position.round(4))
 
-        # Get and update yaw (make pretty with modulo)
+        # Get and update heave
+        heave = self._get_next_heave()
+        self.cur_pose.heave(heave)
+        self.debug(f"    -> heave={heave:>9.4f}:", self.cur_pose.position.round(4))
+
+        # Get and update roll
+        roll = self._get_next_roll()
+        self.cur_pose.roll(roll, degrees=True)
+        self.debug(f"    -> roll ={roll:>9.4f}:", self.cur_pose.get_rotvec().round(4))
+
+        # Get and update pitch
+        pitch = self._get_next_pitch()
+        self.cur_pose.pitch(pitch, degrees=True)
+        self.debug(f"    -> pitch={pitch:>9.4f}:", self.cur_pose.get_rotvec().round(4))
+
+        # Get and update yaw
         yaw = self._get_next_yaw()
-        rel_yaw = self.cur_yaw + yaw
-        self.cur_yaw = (rel_yaw + np.pi) % (2 * np.pi) - np.pi
+        self.cur_pose.yaw(yaw, degrees=True)
+        self.debug(f"    -> yaw  ={yaw:>9.4f}:", self.cur_pose.get_rotvec().round(4))
 
-        self.debug("next_move:", [surge, sway, yaw], "\n")
-        return surge, sway, yaw
+        # Check
+        cur_rotvec = self.cur_pose.get_rotvec(degrees=True)
+        assert self.rot_x_lim[0] <= cur_rotvec[0] <= self.rot_x_lim[1]
+        assert self.rot_y_lim[0] <= cur_rotvec[1] <= self.rot_y_lim[1]
+        assert self.rot_z_lim[0] <= cur_rotvec[2] <= self.rot_z_lim[1]
 
-    def _get_min_max_translation(
-        self, min_: float, max_: float, alpha: float
-    ) -> tuple[float, float]:
-        """
-        Get min and max translation in order not to cross the allowed border.
+        next_move = {
+            "surge": surge,
+            "sway": sway,
+            "heave": heave,
+            "roll": roll,
+            "pitch": pitch,
+            "yaw": yaw,
+        }
+        return next_move
 
-        Parameters
-        ----------
-        min_ : float
-            Fixed minimum amount to move.
-        max_ : float
-            Fixed maximum amount to move.
-        alpha : float
-            Angle of the direction to move.
+    def _get_min_max_translation(self) -> tuple[float, float]:
+        # Raise error if outside of allowed boundary box
+        pos_x, pos_y, pos_z = self.cur_pose.position
+        if (
+            not self.x_lim[0] <= pos_x <= self.x_lim[1]
+            or not self.y_lim[0] <= pos_y <= self.y_lim[1]
+            or not self.z_lim[0] <= pos_z <= self.z_lim[1]
+        ):
+            raise RuntimeError("Camera is outside of the allowed boundaries")
 
-        Returns
-        -------
-        float
-            Minimal amount to move (backward) in order not to cross boundaries.
-        float
-            Maximal amount to move (forward) in order not to cross boundaries.
+        # Get direction of movement (assuming we point towards the x-axis)
+        direction = self.cur_pose.rotation[:, 0]
 
-        """
-        # Normalize the angle alpha
-        alpha = alpha % (2 * np.pi)
+        # Don't collide with front/back border
+        x_plane_normal = np.array([1, 0, 0])
+        x0_plane_point = np.array([self.x_lim[0], 0, 0])
+        x1_plane_point = np.array([self.x_lim[1], 0, 0])
+        min_x = -self._get_directed_dist_to_plane(x_plane_normal, x0_plane_point)
+        max_x = self._get_directed_dist_to_plane(x_plane_normal, x1_plane_point)
+        if direction[0] < 0:
+            min_x, max_x = -max_x, -min_x
 
-        # Define variables for border distances
-        d_top = self.xlim[1] - self.cur_x
-        d_left = self.ylim[1] - self.cur_y
-        d_right = self.cur_y - self.ylim[0]
-        d_bottom = self.cur_x - self.xlim[0]
+        # Don't collide with left/right borders
+        y_plane_normal = np.array([0, 1, 0])
+        y0_plane_point = np.array([0, self.y_lim[0], 0])
+        y1_plane_point = np.array([0, self.y_lim[1], 0])
+        min_y = -self._get_directed_dist_to_plane(y_plane_normal, y0_plane_point)
+        max_y = self._get_directed_dist_to_plane(y_plane_normal, y1_plane_point)
+        if direction[1] < 0:
+            min_y, max_y = -max_y, -min_y
 
-        # Raise error if the point is not within the allowed boundaries
-        if d_top < 0 or d_right < 0 or d_bottom < 0 or d_left < 0:
-            raise AssertionError("The point is not within the allowed grid.")
+        # Don't collide with top/bottom border
+        z_plane_normal = np.array([0, 0, 1])
+        z0_plane_point = np.array([0, 0, self.z_lim[0]])
+        z1_plane_point = np.array([0, 0, self.z_lim[1]])
+        min_z = -self._get_directed_dist_to_plane(z_plane_normal, z0_plane_point)
+        max_z = self._get_directed_dist_to_plane(z_plane_normal, z1_plane_point)
+        if direction[2] < 0:
+            min_z, max_z = -max_z, -min_z
 
-        # Case 1: alpha in [0, 90]
-        if 0 <= alpha <= np.pi / 2:
-            self.debug("a: [0, 90]")
-            max_ = min(max_, d_top / np.cos(alpha))
-            max_ = min(max_, d_left / np.cos(np.pi / 2 - alpha))
-            min_ = max(min_, -d_right / np.cos(np.pi / 2 - alpha))
-            min_ = max(min_, -d_bottom / np.cos(alpha))
+        # Calculate min/max translation
+        min_ = max(min_x, min_y, min_z)
+        max_ = min(max_x, max_y, max_z)
+        return min_, max_
 
-        # Case 2: alpha in [90, 180]
-        elif np.pi / 2 <= alpha <= np.pi:
-            self.debug("b: [90, 180]")
-            min_ = max(min_, -d_top / np.cos(np.pi - alpha))
-            max_ = min(max_, d_left / np.cos(np.pi / 2 - alpha))
-            min_ = max(min_, -d_right / np.cos(np.pi / 2 - alpha))
-            max_ = min(max_, d_bottom / np.cos(np.pi - alpha))
+    def _get_directed_dist_to_plane(
+        self,
+        plane_normal: npt.NDArray[np.float_],
+        plane_point: npt.NDArray[np.float_],
+        epsilon: float = 1e-6,
+    ):
+        # Get current camera view direction
+        camera_point = self.cur_pose.position
+        camera_direction = self.cur_pose.rotation @ np.array([1, 0, 0])
 
-        # Case 3: alpha in [180, 270]
-        elif np.pi <= alpha <= np.pi * 3 / 2:
-            self.debug("c: [180, 270]")
-            min_ = max(min_, -d_top / np.cos(np.pi - alpha))
-            min_ = max(min_, d_left / np.cos(np.pi * 3 / 2 - alpha))
-            max_ = min(max_, -d_right / np.cos(np.pi * 3 / 2 - alpha))
-            max_ = min(max_, d_bottom / np.cos(np.pi - alpha))
+        # Get intersecting point of ray and plane
+        denom = plane_normal.dot(camera_direction)
+        if abs(denom) < epsilon:
+            return np.inf
+        si = -plane_normal.dot(camera_point - plane_point) / denom
+        psi = camera_point + si * camera_direction
 
-        # Case 4: alpha in [270, 360]
-        else:
-            self.debug("d: [270, 360]")
-            max_ = min(max_, d_top / np.cos(alpha))
-            min_ = max(min_, d_left / np.cos(np.pi / 2 - alpha))
-            max_ = min(max_, -d_right / np.cos(np.pi / 2 - alpha))
-            min_ = max(min_, -d_bottom / np.cos(alpha))
-
-        self.debug("min/max:", [min_, max_])
-
-        return min_ * 0.99, max_ * 0.99
+        # Calculate distance
+        return np.sqrt(np.sum((camera_point - psi) ** 2))
 
     def _get_next_surge(self) -> float:
-        min_surge, max_surge = self._get_min_max_translation(
-            -self.max_surge, self.max_surge, self.cur_yaw
-        )
-        return self.rng.uniform(min_surge, max_surge)
+        min_, max_ = self._get_min_max_translation()
+        min_ = max(min_, -self.max_surge)
+        max_ = min(max_, self.max_surge)
+        return self.rng.uniform(min_, max_)
 
     def _get_next_sway(self) -> float:
-        # Note that we adjust the angle by 90 degrees
-        min_sway, max_sway = self._get_min_max_translation(
-            -self.max_sway, self.max_sway, self.cur_yaw + np.pi / 2
-        )
-        return self.rng.uniform(min_sway, max_sway)
+        self.cur_pose.yaw(90, degrees=True)
+        min_, max_ = self._get_min_max_translation()
+        self.cur_pose.yaw(-90, degrees=True)
+        min_ = max(min_, -self.max_sway)
+        max_ = min(max_, self.max_sway)
+        return self.rng.uniform(min_, max_)
+
+    def _get_next_heave(self) -> float:
+        self.cur_pose.pitch(-90, degrees=True)
+        min_, max_ = self._get_min_max_translation()
+        self.cur_pose.pitch(90, degrees=True)
+        min_ = max(min_, -self.max_heave)
+        max_ = min(max_, self.max_heave)
+        return self.rng.uniform(min_, max_)
+
+    def _get_next_roll(self) -> float:
+        # Estimate effect of roll on rotation vector
+        cur_rotvec = self.cur_pose.get_rotvec(degrees=True)
+        oth_rotvec = self.cur_pose.copy().roll(1).get_rotvec(degrees=True)
+        delta = oth_rotvec - cur_rotvec
+
+        # Find min/max roll to stay within allowed rotation parameters
+        rot_min_max = (
+            np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
+            - cur_rotvec[:, None]
+        ) / delta[:, None]
+        mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
+        min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_roll)  # type: ignore
+        max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_roll)  # type: ignore
+
+        return self.rng.uniform(min_, max_)
+
+    def _get_next_pitch(self) -> float:
+        # Estimate effect of pitch on rotation vector
+        cur_rotvec = self.cur_pose.get_rotvec(degrees=True)
+        oth_rotvec = self.cur_pose.copy().pitch(1).get_rotvec(degrees=True)
+        delta = oth_rotvec - cur_rotvec
+
+        # Find min/max pitch to stay within allowed rotation parameters
+        rot_min_max = (
+            np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
+            - cur_rotvec[:, None]
+        ) / delta[:, None]
+        mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
+        min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_pitch)  # type: ignore
+        max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_pitch)  # type: ignore
+
+        return self.rng.uniform(min_, max_)
 
     def _get_next_yaw(self) -> float:
-        # Get min/max yaw, given the min/max yaw limit
-        min_yaw = (self.yawlim[0] - self.cur_yaw + np.pi) % (2 * np.pi) - np.pi
-        max_yaw = (self.yawlim[1] - self.cur_yaw) % (2 * np.pi)
-        # Keep yaw within the allowed min/max parameter
-        min_yaw = max(-self.max_yaw, min_yaw)
-        max_yaw = min(self.max_yaw, max_yaw)
+        # Estimate effect of yaw on rotation vector
+        cur_rotvec = self.cur_pose.get_rotvec(degrees=True)
+        oth_rotvec = self.cur_pose.copy().yaw(1).get_rotvec(degrees=True)
+        delta = oth_rotvec - cur_rotvec
 
-        return self.rng.uniform(min_yaw, max_yaw)
+        # Find min/max yaw to stay within allowed rotation parameters
+        rot_min_max = (
+            np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
+            - cur_rotvec[:, None]
+        ) / delta[:, None]
+        mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
+        min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_yaw)  # type: ignore
+        max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_yaw)  # type: ignore
+
+        return self.rng.uniform(min_, max_)
+
+
+class PosePlanner2D(PosePlanner3D):
+    """
+    Planar planner for random camera poses.
+    """
+
+    def __init__(
+        self,
+        x_lim: float | tuple[float, float] = (-1, 1),
+        y_lim: float | tuple[float, float] = (-1, 1),
+        rot_lim: float | tuple[float, float] = (-45, 45),
+        max_surge: float = 0.5,
+        max_sway: float = 0.5,
+        max_yaw: float = 10,
+        degrees: bool = True,
+        seed: int | None = None,
+        verbose: int = 0,
+    ):
+        super().__init__(
+            # fmt: off
+            x_lim=x_lim, y_lim=y_lim, z_lim=0,
+            rot_x_lim=0, rot_y_lim=0, rot_z_lim=rot_lim,
+            max_surge=max_surge, max_sway=max_sway, max_heave=0,
+            max_pitch=0, max_roll=0, max_yaw=max_yaw,
+            degrees=degrees, seed=seed, verbose=verbose
+            # fmt: on
+        )
 
 
 # ==============================================================================
 # Main
 
 
-def main_dummy() -> None:
+def main_dummy(plot: bool = False, save_dir: str | Path | None = None):
     """
     Generate dummy poses, save to file and visualize.
 
+    Parameters
+    ----------
+    plot : bool, optional
+        If True, shows a plot, by default False
+    save_dir : str | Path | None, optional
+        If str or Path, will store as CSV, by default None
+
     """
     poses = make_dummy_poses()
-    poses.to_csv(Path(__file__).parent / "dummy_pitch=0deg_roll=0deg.csv")
-    CameraPoseVisualizer().plot(poses)
+    if plot:
+        CameraPoseVisualizer().plot(poses)
+    if save_dir:
+        poses.to_csv(Path(save_dir) / "dummy_pitch=0deg_roll=0deg.csv")
 
 
 def main(
-    pitch: int | list[int] = 0,
-    roll: int | list[int] = 0,
+    plot: bool = False,
     save_dir: str | Path | None = None,
-) -> None:
+    n_movements: int = 100,
+    seed=1234,
+    verbose: int = 0,
+):
     """
-    Generate poses and save to file.
+    Generates random poses.
 
     Parameters
     ----------
-    pitch : int | list[int], optional
-        Pitch of initial position, by default 0
-    roll : int | list[int], optional
-        Roll of initial position, by default 0
+    plot : bool, optional
+        If True, shows the plot, by default False
     save_dir : str | Path | None, optional
-        Whether to visualize or save as CSV file, by default None
-        If None, will visualize the poses.
-        If str or Path, the generated poses will be stored in there.
+        If str or Path, will save as CSV, by default None
+    n_movements : int, optional
+        Number of camera movements to generate, by default 100
+    seed : int, optional
+        Seed for reproducability, by default 1234
+    verbose : int, optional
+        Verbose printing, by default 0
 
     """
-    pitch_list = pitch if isinstance(pitch, list) else [pitch]
-    roll_list = roll if isinstance(roll, list) else [roll]
-    n_movements = 200
-    planner_kwargs = dict(
-        xlim=2000, ylim=2000, yawlim=45, max_surge=800, max_sway=800, max_yaw=30
+    # Init pose
+    x, y, z = 0, 0, 0
+    roll, pitch, yaw = 0, 0, 0
+    init_pose = CameraPose().translate(x=x, y=y, z=z).roll(roll).pitch(pitch).yaw(yaw)
+
+    # Make random poses
+    pose_planner = PosePlanner3D(
+        # fmt: off
+        x_lim=1, y_lim=1, z_lim=1,
+        max_surge=.3, max_sway=.2, max_heave=.1,
+        rot_x_lim=10, rot_y_lim=(-5, 60), rot_z_lim=45,
+        max_roll=5, max_pitch=5, max_yaw=15,
+        seed=seed, verbose=verbose,
+        # fmt: on
     )
-    for pitch in pitch_list:
-        for roll in roll_list:
-            seed = 1234 + (pitch * roll)
+    poses = pose_planner.get_random_poses(init_pose, n_movements=n_movements)
 
-            # Make random poses
-            init_pose = CameraPose().pitch(pitch).roll(roll)
-            planner = PlanarPosePlanner(**planner_kwargs, seed=seed)  # type: ignore
-            poses = planner.get_random_poses(init_pose, n_movements=n_movements)
+    # Save as CSV
+    if save_dir:
+        save_dir = Path(save_dir)
+        assert save_dir.exists() and save_dir.is_dir()
+        filename = "movements.csv"
+        poses.to_csv(save_dir / filename, sep="\t")
 
-            if not save_dir:
-                # Visualize
-                lim = (-2000, 2000)
-                CameraPoseVisualizer(300, xlim=lim, ylim=lim, zlim=lim).plot(poses)
-                return
-            else:
-                # Save data
-                filename = f"movements_pitch={pitch}deg_roll={roll}deg.csv"
-                poses.to_csv(Path(save_dir) / filename)
+    # Visualize
+    if plot:
+        xlim = pose_planner.x_lim
+        ylim = pose_planner.y_lim
+        zlim = pose_planner.z_lim
+        xlen = xlim[1] - xlim[0]
+        ylen = ylim[1] - ylim[0]
+        zlen = zlim[1] - zlim[0]
+        maxlen = max(xlen, ylen, zlen)
+        xlim = (xlim[0] - (maxlen - xlen) / 2, xlim[1] + (maxlen - xlen) / 2)
+        ylim = (ylim[0] - (maxlen - ylen) / 2, ylim[1] + (maxlen - ylen) / 2)
+        zlim = (zlim[0] - (maxlen - zlen) / 2, zlim[1] + (maxlen - zlen) / 2)
+        CameraPoseVisualizer(0.1 * maxlen, xlim=xlim, ylim=ylim, zlim=zlim).plot(poses)
 
 
 if __name__ == "__main__":
     # main_dummy()
-    main(pitch=30, roll=0)
+    main(plot=True, n_movements=500, seed=1234, verbose=0)
