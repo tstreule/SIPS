@@ -914,6 +914,6 @@ def main(
 
 
 if __name__ == "__main__":
-    main_dummy(plot=True, save_dir="scripts/drone_movements")
-    # save_dir = "data/drone_movements"
-    # main(plot=True, save_dir=save_dir, n_movements=500, seed=1234, verbose=0)
+    # main_dummy(plot=True, save_dir="scripts/drone_movements")
+    save_dir = "data/drone_movements"
+    main(plot=True, save_dir=save_dir, n_movements=500, seed=1234, verbose=0)
