@@ -14,16 +14,27 @@ Drone movements are translations (surge, sway, heave) and rotations (roll, pitch
 
 ## Output
 
-The generated output is in form of a CSV file with the following columns:
+The generated output is in form of a CSV file. The first six columns correspond to the absolute coordinates and orientation of the sonar camera:
 
 - `x[m]`: x position in m
 - `y[m]`: y position in m
 - `z[m]`: z position in m
 - `x[deg]`: rotation around x-axis in degree
-- `x[deg]`: rotation around y-axis in degree
-- `x[deg]`: rotation around z-axis in degree
+- `y[deg]`: rotation around y-axis in degree
+- `z[deg]`: rotation around z-axis in degree
 
-The filename indicates the initial pitch and roll of the drone.
+**Note that `x[deg]`, `y[deg]` and `z[deg]` are obtained from [`scipy.spatial.transform.Rotation.as_rotvec()`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.transform.Rotation.as_rotvec.html)!**
+
+The remaining six columns correspond to the relative movements of the drone compared to the previous state (row in the table):
+
+- `surge[m]`: surge in m
+- `sway[m]`: sway in m
+- `heave[m]`: heave in m
+- `roll[deg]`: roll in degree
+- `pitch[deg]`: pitch in degree
+- `yaw[deg]`: yaw in degree
+
+:warning: **Note that you only obtain the correct position if you follow movements one after another (first surge, then sway, etc.). Otherwise you may end up in another position!**
 
 ### Dummy example
 
