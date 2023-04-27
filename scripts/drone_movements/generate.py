@@ -18,6 +18,8 @@ translations, in order to obtain a proper dataset where two images from subseque
 frames include a high percentage of the same keypoints.
 
 """
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +29,7 @@ from matplotlib import cm
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from scipy.spatial.transform import Rotation as R
+from typing_extensions import Self
 
 
 class CameraPose:
@@ -92,19 +95,23 @@ class CameraPose:
     def get_rotvec(self, degrees: bool = True) -> npt.NDArray[np.float_]:
         return R.from_matrix(self.rotation).as_rotvec(degrees=degrees)  # type: ignore
 
+    def set_rotvec(self, rotvec: npt.ArrayLike, degrees: bool = True) -> Self:
+        self.rotation = R.from_rotvec(rotvec, degrees=degrees).as_matrix()  # type: ignore
+        return self
+
     def get_quat(self) -> npt.NDArray[np.float_]:
         return R.from_matrix(self.rotation).as_quat()
 
     # ----------------------------------------------------------------------
     # Absolute transformations
 
-    def translate(self, x: float = 0, y: float = 0, z: float = 0) -> "CameraPose":
+    def translate(self, x: float = 0, y: float = 0, z: float = 0) -> Self:
         self.position = self.position + np.array([x, y, z])
         return self
 
     def rotate(
         self, x: float = 0, y: float = 0, z: float = 0, degrees: bool = True
-    ) -> "CameraPose":
+    ) -> Self:
         rot = R.from_euler("xyz", [x, y, z], degrees=degrees)
         self.rotation = rot.apply(self.rotation, inverse=True)
         return self
@@ -112,26 +119,69 @@ class CameraPose:
     # ----------------------------------------------------------------------
     # Relative transformations
 
-    def surge(self, dist: float) -> "CameraPose":
+    def surge(self, dist: float) -> Self:
         self.position += self.rotation @ np.array([dist, 0, 0])
         return self
 
-    def sway(self, dist: float) -> "CameraPose":
+    def sway(self, dist: float) -> Self:
         self.position += self.rotation @ np.array([0, dist, 0])
         return self
 
-    def heave(self, dist: float) -> "CameraPose":
+    def heave(self, dist: float) -> Self:
         self.position += self.rotation @ np.array([0, 0, dist])
         return self
 
-    def roll(self, angle: float, degrees: bool = True) -> "CameraPose":
+    def roll(self, angle: float, degrees: bool = True) -> Self:
         return self.rotate(x=angle, degrees=degrees)
 
-    def pitch(self, angle: float, degrees: bool = True) -> "CameraPose":
+    def pitch(self, angle: float, degrees: bool = True) -> Self:
         return self.rotate(y=angle, degrees=degrees)
 
-    def yaw(self, angle: float, degrees: bool = True) -> "CameraPose":
+    def yaw(self, angle: float, degrees: bool = True) -> Self:
         return self.rotate(z=angle, degrees=degrees)
+
+
+@dataclass
+class RelativeMovement:
+    surge: float
+    sway: float
+    heave: float
+    roll: float
+    pitch: float
+    yaw: float
+    degrees: bool = True  # with default value
+
+    def __post_init__(self):
+        if not self.degrees:
+            self._rad2deg()
+
+    def _rad2deg(self) -> Self:
+        assert not self.degrees
+        self.roll *= np.pi / 180
+        self.pitch *= np.pi / 180
+        self.yaw *= np.pi / 180
+        self.degrees = True
+        return self
+
+    def _deg2rad(self) -> Self:
+        assert self.degrees
+        self.roll *= 180 / np.pi
+        self.pitch *= 180 / np.pi
+        self.yaw *= 180 / np.pi
+        self.degrees = False
+        return self
+
+    def to_list(self, degrees: bool = True) -> list[float]:
+        if degrees is self.degrees:  # internal and requested coincide
+            return [self.surge, self.sway, self.heave, self.roll, self.pitch, self.yaw]
+
+        if degrees and not self.degrees:
+            out = self._rad2deg().to_list(degrees=degrees)
+            self._deg2rad()
+        else:
+            out = self._deg2rad().to_list(degrees=degrees)
+            self._rad2deg()
+        return out
 
 
 class CameraPoseTracker:
@@ -144,50 +194,37 @@ class CameraPoseTracker:
         Initial pose
     """
 
+    _abscol = ["x[m]", "y[m]", "z[m]", "x[deg]", "y[deg]", "z[deg]"]
+    _relcol = ["surge[m]", "sway[m]", "heave[m]", "roll[deg]", "pitch[deg]", "yaw[deg]"]
+    _abscol_rad = [c.replace("[deg]", "[rad]") for c in _abscol]
+    _relcol_rad = [c.replace("[deg]", "[rad]") for c in _relcol]
+
     def __init__(self, init_pose: CameraPose) -> None:
-        self.history: list[CameraPose] = [init_pose]
+        self.abs_history: list[CameraPose] = [init_pose]
+        self.rel_history: list[RelativeMovement] = [RelativeMovement(0, 0, 0, 0, 0, 0)]
 
     def __len__(self) -> int:
-        return len(self.history)
+        assert len(self.abs_history) == len(self.rel_history)
+        return len(self.abs_history)
+
+    def __getitem__(self, ix: int) -> tuple[CameraPose, RelativeMovement]:
+        return self.abs_history[ix], self.rel_history[ix]
 
     def __iter__(self):
         self._current_index = 0
         return self
 
     def __next__(self):
-        if self._current_index > len(self.history) - 1:
+        ix = self._current_index
+        if ix > len(self) - 1:
             raise StopIteration
-        current_pose = self.history[self._current_index]
         self._current_index += 1
-        return current_pose
+        return self[ix]
 
     # ----------------------------------------------------------------------
     # Transformations
 
-    def move_abs(
-        self,
-        trans_x: float = 0,
-        trans_y: float = 0,
-        trans_z: float = 0,
-        rot_x: float = 0,
-        rot_y: float = 0,
-        rot_z: float = 0,
-        degrees: bool = True,
-    ) -> "CameraPoseTracker":
-        """
-        Movements relative to the coordinate system.
-
-        """
-        curr_pose = self.history[-1]
-        next_pose = curr_pose.copy()
-        # Apply transformation
-        next_pose.translate(x=trans_x, y=trans_y, z=trans_z)
-        next_pose.rotate(x=rot_x, y=rot_y, z=rot_z, degrees=degrees)
-        # Append to history
-        self.history.append(next_pose)
-        return self
-
-    def move_rel(
+    def move(
         self,
         surge: float = 0,
         sway: float = 0,
@@ -196,43 +233,78 @@ class CameraPoseTracker:
         pitch: float = 0,
         yaw: float = 0,
         degrees: bool = True,
-    ) -> "CameraPoseTracker":
+    ) -> Self:
         """
         Movements relative to the camera's orientation.
 
         """
-        curr_pose = self.history[-1]
+        curr_pose = self.abs_history[-1]
         next_pose = curr_pose.copy()
         # Apply transformation
         next_pose.surge(surge).sway(sway).heave(heave)
         next_pose.roll(roll, degrees).pitch(pitch, degrees).yaw(yaw, degrees)
         # Append to history
-        self.history.append(next_pose)
+        self.abs_history.append(next_pose)
+        self.rel_history.append(
+            RelativeMovement(surge, sway, heave, roll, pitch, yaw, degrees)
+        )
         return self
 
     # ----------------------------------------------------------------------
     # Export and import
 
-    def as_pandas(self) -> pd.DataFrame:
-        columns = ["x[m]", "y[m]", "z[m]", "x[deg]", "y[deg]", "z[deg]"]
-        data = pd.DataFrame([p.as_vector() for p in self.history], columns=columns)
-        return data
+    def as_pandas(
+        self, select: str | None = None, degrees: bool = True
+    ) -> pd.DataFrame:
+        # Read out absolute movements
+        absolute = pd.DataFrame(
+            [p.as_vector(degrees=degrees) for p in self.abs_history],
+            columns=self._abscol if degrees else self._abscol_rad,
+        )
+        # Read out relative movements
+        relative = pd.DataFrame(
+            [m.to_list(degrees=degrees) for m in self.rel_history],
+            columns=self._relcol if degrees else self._relcol_rad,
+        )
+
+        if select == "absolute":
+            return absolute
+        elif select == "relative":
+            return relative
+        else:
+            return pd.concat([absolute, relative], axis=1)
 
     @staticmethod
     def from_pandas(data: pd.DataFrame, degrees: bool = True) -> "CameraPoseTracker":
+        if degrees:
+            abs_cols = CameraPoseTracker._abscol
+            rel_cols = CameraPoseTracker._relcol
+        else:
+            abs_cols = CameraPoseTracker._abscol_rad
+            rel_cols = CameraPoseTracker._relcol_rad
         # Pop first row
         init_row = data.iloc[0]
         data = data.iloc[1:]
         # Initialize tracker
-        init_pose = CameraPose.from_vector(init_row.to_numpy(), degrees)
+        init_pose_np = init_row[abs_cols].to_numpy()
+        init_pose = CameraPose.from_vector(init_pose_np, degrees)
         poses = CameraPoseTracker(init_pose)
         # Extract all other rows
         for _, row in data.iterrows():
-            poses.history.append(CameraPose.from_vector(row.to_numpy(), degrees))
+            absolute = row[abs_cols].to_numpy()
+            relative = row[rel_cols].to_list() + [degrees]
+            poses.abs_history.append(CameraPose.from_vector(absolute, degrees))
+            poses.rel_history.append(RelativeMovement(*relative))
         return poses
 
-    def to_csv(self, filepath: str | Path, sep: str = ",") -> None:
-        self.as_pandas().to_csv(filepath, index=False, sep=sep)
+    def to_csv(
+        self,
+        filepath: str | Path,
+        sep: str = ",",
+        select: str | None = None,
+        degrees: bool = True,
+    ) -> None:
+        self.as_pandas(select, degrees).to_csv(filepath, index=False, sep=sep)
 
 
 class CameraPoseVisualizer:
@@ -295,7 +367,7 @@ class CameraPoseVisualizer:
         color: str | list[str] = "auto",
         alpha: float | list[float] = 0.35,
         title: str | None = None,
-    ) -> "CameraPoseVisualizer":
+    ) -> Self:
         """
         Plot and show the camera pose(s).
 
@@ -332,16 +404,14 @@ class CameraPoseVisualizer:
         if not isinstance(color, list):
             color = [color for _ in range(len(pose))]
 
-        for p, c, a in zip(pose, color, alpha):
+        for (p, _), c, a in zip(pose, color, alpha):
             self._plot(p, c, a)
 
         plt.title(title or "Camera Poses")
         plt.show()
         return self
 
-    def _plot(
-        self, pose: CameraPose, color: str | list[float], alpha: float
-    ) -> "CameraPoseVisualizer":
+    def _plot(self, pose: CameraPose, color: str | list[float], alpha: float) -> Self:
         # Define pyramid vertices
         azimuth = self.visual_range * np.tan(self.azimuth_fov / 2)
         elevation = self.visual_range * np.tan(self.elevation_fov / 2)
@@ -386,9 +456,9 @@ def make_dummy_poses() -> CameraPoseTracker:
     for i in range(24):
         # Makes two circles, one counter-clockwise and one clockwise
         if i < 12:
-            poses.move_rel(surge=10, yaw=30)
+            poses.move(surge=0.4, yaw=30)
         else:
-            poses.move_rel(surge=10, yaw=-30)
+            poses.move(surge=0.4, yaw=-30)
 
     return poses
 
@@ -532,7 +602,7 @@ class PosePlanner3D:
             # Note that we have to follow the same update order as in move_rel().
             # Otherwise, we will have wrong estimates for the current relative pose.
             move_kwargs = self._get_next_movement(poses)
-            poses.move_rel(**move_kwargs, degrees=True)
+            poses.move(**move_kwargs, degrees=True)
 
         return poses
 
@@ -541,7 +611,7 @@ class PosePlanner3D:
         # Works only if the initial pose starts at (x, y, z) = (0, 0, 0) and has
         # no initial rotations.
         self.debug("estimate:", self.cur_pose.as_vector(degrees=True).round(4))
-        self.debug("true:    ", poses.history[-1].as_vector(degrees=True).round(4))
+        self.debug("true:    ", poses.abs_history[-1].as_vector(degrees=True).round(4))
 
         # Get and update surge
         surge = self._get_next_surge()
@@ -686,7 +756,7 @@ class PosePlanner3D:
         rot_min_max = (
             np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
             - cur_rotvec[:, None]
-        ) / delta[:, None]
+        ) / (delta[:, None] + 1e-9)
         mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
         min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_roll)  # type: ignore
         max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_roll)  # type: ignore
@@ -703,7 +773,7 @@ class PosePlanner3D:
         rot_min_max = (
             np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
             - cur_rotvec[:, None]
-        ) / delta[:, None]
+        ) / (delta[:, None] + 1e-9)
         mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
         min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_pitch)  # type: ignore
         max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_pitch)  # type: ignore
@@ -720,7 +790,7 @@ class PosePlanner3D:
         rot_min_max = (
             np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
             - cur_rotvec[:, None]
-        ) / delta[:, None]
+        ) / (delta[:, None] + 1e-9)
         mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
         min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_yaw)  # type: ignore
         max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_yaw)  # type: ignore
@@ -760,7 +830,7 @@ class PosePlanner2D(PosePlanner3D):
 # Main
 
 
-def main_dummy(plot: bool = False, save_dir: str | Path | None = None):
+def main_dummy(plot: bool = False, save_dir: str | Path | None = None) -> None:
     """
     Generate dummy poses, save to file and visualize.
 
@@ -774,9 +844,10 @@ def main_dummy(plot: bool = False, save_dir: str | Path | None = None):
     """
     poses = make_dummy_poses()
     if plot:
-        CameraPoseVisualizer().plot(poses)
+        CameraPoseVisualizer(0.35).plot(poses)
     if save_dir:
-        poses.to_csv(Path(save_dir) / "dummy_pitch=0deg_roll=0deg.csv")
+        Path(save_dir).mkdir(exist_ok=True, parents=True)
+        poses.to_csv(Path(save_dir) / "drone_move_dummy.csv")
 
 
 def main(
@@ -785,7 +856,7 @@ def main(
     n_movements: int = 100,
     seed=1234,
     verbose: int = 0,
-):
+) -> None:
     """
     Generates random poses.
 
@@ -806,15 +877,15 @@ def main(
     # Init pose
     x, y, z = 0, 0, 0
     roll, pitch, yaw = 0, 0, 0
-    init_pose = CameraPose().translate(x=x, y=y, z=z).roll(roll).pitch(pitch).yaw(yaw)
+    init_pose = CameraPose().translate(x=x, y=y, z=z).set_rotvec([roll, pitch, yaw])
 
     # Make random poses
     pose_planner = PosePlanner3D(
         # fmt: off
         x_lim=1, y_lim=1, z_lim=1,
         max_surge=.3, max_sway=.2, max_heave=.1,
-        rot_x_lim=10, rot_y_lim=(-5, 60), rot_z_lim=45,
-        max_roll=5, max_pitch=5, max_yaw=15,
+        rot_x_lim=5, rot_y_lim=(-5, 45), rot_z_lim=45,
+        max_roll=1, max_pitch=2, max_yaw=30,
         seed=seed, verbose=verbose,
         # fmt: on
     )
@@ -823,8 +894,8 @@ def main(
     # Save as CSV
     if save_dir:
         save_dir = Path(save_dir)
-        assert save_dir.exists() and save_dir.is_dir()
-        filename = "movements.csv"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"drone_move_{time.time() * 1e3:.0f}.csv"
         poses.to_csv(save_dir / filename, sep="\t")
 
     # Visualize
@@ -843,5 +914,6 @@ def main(
 
 
 if __name__ == "__main__":
-    # main_dummy()
-    main(plot=True, n_movements=500, seed=1234, verbose=0)
+    main_dummy(plot=True, save_dir="scripts/drone_movements")
+    # save_dir = "data/drone_movements"
+    # main(plot=True, save_dir=save_dir, n_movements=500, seed=1234, verbose=0)

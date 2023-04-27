@@ -16,9 +16,9 @@ Drone movements are translations (surge, sway, heave) and rotations (roll, pitch
 
 The generated output is in form of a CSV file with the following columns:
 
-- `x[mm]`: x position in mm
-- `y[mm]`: y position in mm
-- `z[mm]`: z position in mm
+- `x[m]`: x position in m
+- `y[m]`: y position in m
+- `z[m]`: z position in m
 - `x[deg]`: rotation around x-axis in degree
 - `x[deg]`: rotation around y-axis in degree
 - `x[deg]`: rotation around z-axis in degree
@@ -27,6 +27,6 @@ The filename indicates the initial pitch and roll of the drone.
 
 ### Dummy example
 
-[`dummy_pitch=0deg_roll=0deg.csv`](./dummy_pitch%3D0deg_roll%3D0deg.csv) is an examplary CSV file whose movements can be visualized as follows:
+[`drone_move_dummy.csv`](./drone_move_dummy.csv) is an examplary CSV file whose movements can be visualized as follows:
 
-![dummy example](./dummy_pitch%3D0deg_roll%3D0deg.png)
+![dummy example](./drone_move_dummy.png)
