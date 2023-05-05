@@ -836,6 +836,72 @@ class PosePlanner2D(PosePlanner3D):
 
 
 # ==============================================================================
+# Utils
+
+
+def convert_camera_to_drone_relative(
+    camera_poses: CameraPoseTracker, angle: float = 0, degrees: bool = True
+) -> CameraPoseTracker:
+    """
+    Adjusts the poses to make up for the angle between drone and camera.
+
+    Parameters
+    ----------
+    camera_poses : CameraPoseTracker
+        Camera poses to be converted.
+    angle : float, optional
+        Adjusting pitch angle between camera and drone orientation, by default 0
+    degrees : bool, optional
+        Whether 'angle' is given in degrees or radians, by default True
+
+    Returns
+    -------
+    CameraPoseTracker
+        Converted poses.
+
+    """
+    if angle == 0:
+        return camera_poses
+
+    # Set up new pose tracker while adjusting the initial orientation
+    init_drone = camera_poses.abs_history[0].copy().pitch(-angle, degrees=degrees)
+    drone_poses = CameraPoseTracker(init_pose=init_drone)
+
+    # Translate the relative camera movements to relative drone movements
+    # Note: We skip i=0 since initial pose is already set up
+    for i in range(1, len(camera_poses)):
+
+        # Get rotation between camera and drone orientation
+        prev_camera_orient = R.from_quat(camera_poses.abs_history[i - 1].get_quat())
+        prev_drone_orient = R.from_quat(drone_poses.abs_history[i - 1].get_quat())
+
+        # Find relative drone movement
+        delta_camera = camera_poses.rel_history[i]
+        camera_mov = delta_camera.to_list()[:3]
+        drone_mov = (prev_drone_orient.inv() * prev_camera_orient).apply(camera_mov)
+
+        # Find relative drone rotation
+        # Note: Big 'XYZ' correspond to intrinsic rotations in given sequential order
+        camera_rot = R.from_euler(
+            "XYZ", delta_camera.to_list()[3:], degrees=delta_camera.degrees
+        )
+        drone_rot = (prev_drone_orient.inv() * camera_rot).as_euler("XYZ")
+
+        # Apply
+        surge, sway, heave = drone_mov
+        roll, pitch, yaw = drone_rot
+        drone_poses.move(surge, sway, heave, roll, pitch, yaw, degrees=False)
+
+        # Assert equal camera and drone position
+        np.testing.assert_allclose(
+            camera_poses.abs_history[i].position,
+            drone_poses.abs_history[i].position,
+        )
+
+    return drone_poses
+
+
+# ==============================================================================
 # Main
 
 
@@ -860,6 +926,7 @@ def main_dummy(plot: bool = False, save_dir: str | Path | None = None) -> None:
 
 
 def main(
+    drone_relative: bool = True,
     plot: bool = False,
     save_dir: str | Path | None = None,
     n_movements: int = 100,
@@ -885,20 +952,31 @@ def main(
     """
     # Init pose
     x, y, z = 0, 0, 0
-    roll, pitch, yaw = 0, 0, 0
+    roll, pitch, yaw = 0, 45, 0
     init_pose = CameraPose().translate(x=x, y=y, z=z).set_rotvec([roll, pitch, yaw])
 
     # Make random poses
-    pose_planner = PosePlanner3D(
+    # pose_planner = PosePlanner3D(
+    #     # fmt: off
+    #     x_lim=1, y_lim=1, z_lim=0.01,
+    #     max_surge=.3, max_sway=.2, max_heave=.1,
+    #     rot_x_lim=5, rot_y_lim=5, rot_z_lim=45,
+    #     max_roll=1, max_pitch=5, max_yaw=30,
+    #     seed=seed, verbose=verbose,
+    #     # fmt: on
+    # )
+    pose_planner = PosePlanner2D(
         # fmt: off
-        x_lim=1, y_lim=1, z_lim=1,
-        max_surge=.3, max_sway=.2, max_heave=.1,
-        rot_x_lim=5, rot_y_lim=(-5, 45), rot_z_lim=45,
-        max_roll=1, max_pitch=2, max_yaw=30,
+        x_lim=(-1, 0), y_lim=1, rot_lim=15,
+        max_surge=0.3, max_sway=0.2, max_yaw=30,
         seed=seed, verbose=verbose,
         # fmt: on
     )
     poses = pose_planner.get_random_poses(init_pose, n_movements=n_movements)
+
+    # Convert movements from camera to drone perspective
+    if drone_relative:
+        poses = convert_camera_to_drone_relative(poses, angle=45)
 
     # Save as CSV
     if save_dir:
@@ -924,5 +1002,12 @@ def main(
 
 if __name__ == "__main__":
     # main_dummy(plot=True, save_dir="scripts/drone_movements")
-    save_dir = "data/drone_movements"
-    main(plot=True, save_dir=save_dir, n_movements=500, seed=1234, verbose=0)
+    save_dir = None  # "data/drone_movements"
+    main(
+        drone_relative=True,
+        plot=True,
+        save_dir=save_dir,
+        n_movements=500,
+        seed=1234,
+        verbose=0,
+    )
