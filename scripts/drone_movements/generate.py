@@ -157,17 +157,17 @@ class RelativeMovement:
 
     def _rad2deg(self) -> Self:
         assert not self.degrees
-        self.roll *= np.pi / 180
-        self.pitch *= np.pi / 180
-        self.yaw *= np.pi / 180
+        self.roll *= 180 / np.pi
+        self.pitch *= 180 / np.pi
+        self.yaw *= 180 / np.pi
         self.degrees = True
         return self
 
     def _deg2rad(self) -> Self:
         assert self.degrees
-        self.roll *= 180 / np.pi
-        self.pitch *= 180 / np.pi
-        self.yaw *= 180 / np.pi
+        self.roll *= np.pi / 180
+        self.pitch *= np.pi / 180
+        self.yaw *= np.pi / 180
         self.degrees = False
         return self
 
@@ -753,14 +753,17 @@ class PosePlanner3D:
         delta = oth_rotvec - cur_rotvec
 
         # Find min/max roll to stay within allowed rotation parameters
-        rot_min_max = (
-            np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
-            - cur_rotvec[:, None]
-        ) / (delta[:, None] + 1e-9)
+        with np.errstate(divide="ignore"):
+            rot_min_max = (
+                np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
+                - cur_rotvec[:, None]
+            ) / (delta[:, None])
         mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
         min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_roll)  # type: ignore
         max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_roll)  # type: ignore
 
+        if max_ - min_ <= 0:
+            return 0
         return self.rng.uniform(min_, max_)
 
     def _get_next_pitch(self) -> float:
@@ -770,31 +773,37 @@ class PosePlanner3D:
         delta = oth_rotvec - cur_rotvec
 
         # Find min/max pitch to stay within allowed rotation parameters
-        rot_min_max = (
-            np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
-            - cur_rotvec[:, None]
-        ) / (delta[:, None] + 1e-9)
+        with np.errstate(divide="ignore"):
+            rot_min_max = (
+                np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
+                - cur_rotvec[:, None]
+            ) / (delta[:, None])
         mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
         min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_pitch)  # type: ignore
         max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_pitch)  # type: ignore
 
+        if max_ - min_ <= 0:
+            return 0
         return self.rng.uniform(min_, max_)
 
     def _get_next_yaw(self) -> float:
         # Estimate effect of yaw on rotation vector
         cur_rotvec = self.cur_pose.get_rotvec(degrees=True)
-        oth_rotvec = self.cur_pose.copy().yaw(1).get_rotvec(degrees=True)
+        oth_rotvec = self.cur_pose.copy().yaw(1, degrees=True).get_rotvec(degrees=True)
         delta = oth_rotvec - cur_rotvec
 
         # Find min/max yaw to stay within allowed rotation parameters
-        rot_min_max = (
-            np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
-            - cur_rotvec[:, None]
-        ) / (delta[:, None] + 1e-9)
+        with np.errstate(divide="ignore"):
+            rot_min_max = (
+                np.array([self.rot_x_lim, self.rot_y_lim, self.rot_z_lim])
+                - cur_rotvec[:, None]
+            ) / (delta[:, None])
         mask = np.array([[True, False] if val >= 0 else [False, True] for val in delta])
         min_ = max(0.9 * np.nanmax(rot_min_max[mask]), -self.max_yaw)  # type: ignore
         max_ = min(0.9 * np.nanmin(rot_min_max[~mask]), self.max_yaw)  # type: ignore
 
+        if max_ - min_ <= 0:
+            return 0
         return self.rng.uniform(min_, max_)
 
 
