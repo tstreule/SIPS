@@ -7,6 +7,7 @@ import numpy.typing as npt
 from PIL import Image
 from rosbags.rosbag1 import Reader
 from rosbags.serde import deserialize_cdr, ros1_to_cdr
+from rosbags.typesys import get_types_from_msg, register_types
 from rosbags.typesys.types import sensor_msgs__msg__Image as ImageMessage
 from scipy.interpolate import interp1d
 from termcolor import cprint
@@ -119,6 +120,7 @@ class DataExtraction:
         self.image_filter_params: dict[str, float | str | None] = {}
         self.poses: list[dict[str, int | dict[str, float] | list[float]]] = []
         self.sonar_images: dict[int, ImageMessage] = {}
+        self.sonar_params: dict[str, float] = {}
 
         self.extracted_sonar = 0
         self.extracted_pose = 0
@@ -126,6 +128,32 @@ class DataExtraction:
         self.datapoints_after_filtering = 0
 
         self.extracted_data = False
+
+        with open("scripts/bag-data-extraction/misc/SonarConfiguration.msg", "r") as f:
+            SONAR_CONFIGURATION_MSG = f.read()
+        with open(
+            "scripts/bag-data-extraction/misc/SonarConfigurationChange.msg", "r"
+        ) as f:
+            SONAR_CONFIGURATION_CHANGE_MSG = f.read()
+
+        register_types(
+            get_types_from_msg(
+                SONAR_CONFIGURATION_MSG,
+                "sonar_driver_interfaces/msg/SonarConfiguration",
+            )
+        )
+        register_types(
+            get_types_from_msg(
+                SONAR_CONFIGURATION_CHANGE_MSG,
+                "sonar_driver_interfaces/msg/SonarConfigurationChange",
+            )
+        )
+        from rosbags.typesys.types import (  # type: ignore  # noqa
+            sonar_driver_interfaces__msg__SonarConfiguration as SonarConfiguration,
+        )
+        from rosbags.typesys.types import (  # type: ignore  # noqa
+            sonar_driver_interfaces__msg__SonarConfigurationChange as SonarConfigurationChange,
+        )
 
     # TODO: check if pose reccording frequency and other recording parameters are correct
     def check_connections(self) -> None:
@@ -143,6 +171,7 @@ class DataExtraction:
 
             sonar_topic = "/proteus_PRA01/sonar_0/image"
             pose_topic = "/proteus_PRA01/gtsam/pose"
+            sonar_config_topic = "/proteus_PRA01/sonar_0/configuration"
             sonar_connections = [
                 x for x in reader.connections if x.topic == sonar_topic
             ]
@@ -154,8 +183,21 @@ class DataExtraction:
                 )
                 print()
                 return
+            sonar_config_connections = [
+                x for x in reader.connections if x.topic == sonar_config_topic
+            ]
+            if len(sonar_config_connections) < 1:
+                cprint(
+                    "No Sonar configuration data found in this bag, skipping the rest of the operations",
+                    "red",
+                )
+                print()
+                return
+
             connections = [
-                x for x in reader.connections if x.topic in [sonar_topic, pose_topic]
+                x
+                for x in reader.connections
+                if x.topic in [sonar_topic, pose_topic, sonar_config_topic]
             ]
 
             first_pose_seen = False
@@ -187,7 +229,38 @@ class DataExtraction:
                         "covariance": msg.pose.covariance.tolist(),
                     }
                     self.poses.append(pose)
-            print()
+
+                if (
+                    connection.msgtype
+                    == "sonar_driver_interfaces/msg/SonarConfiguration"
+                ):
+                    self.sonar_params = {
+                        "horizontal_fov": msg.horz_fov,
+                        "vertical_fov": msg.vert_fov,
+                        "max_range": msg.max_range,
+                        "min_range": msg.min_range,
+                    }
+                    if len(self.sonar_params) > 0:
+                        if (
+                            self.sonar_params["horizontal_fov"] != msg.horz_fov
+                            or self.sonar_params["vertical_fov"] != msg.vert_fov
+                            or self.sonar_params["max_range"] != msg.max_range
+                            or self.sonar_params["min_range"] != msg.min_range
+                        ):
+                            cprint("real change", "red")
+
+                if (
+                    connection.msgtype
+                    == "sonar_driver_interfaces/msg/SonarConfiguration"
+                ):
+                    if (
+                        self.sonar_params["horizontal_fov"] != msg.horz_fov
+                        or self.sonar_params["vertical_fov"] != msg.vert_fov
+                        or self.sonar_params["max_range"] != msg.max_range
+                        or self.sonar_params["min_range"] != msg.min_range
+                    ):
+                        cprint("real change", "red")
+                        print()
             # Check the frequency of the pose data recordings, if they are too high
             # we ignore this bag as the accuracy is lower given measurement drifts
             pose_frequency = 1 / (
@@ -301,12 +374,15 @@ class DataExtraction:
         save_dir = save_dir.joinpath(Path(self.rosbag).with_suffix(""))
         save_dir.mkdir(exist_ok=True)
         (save_dir / "images").mkdir(exist_ok=True)
-        info: dict[str, int | list[str] | dict[str, float | str | None]] = {
+        info: dict[
+            str, int | list[str] | dict[str, float | str | None] | dict[str, float]
+        ] = {
             "extracted_sonar_datapoints": self.extracted_sonar,
             "extracted_pose_datapoints": self.extracted_pose,
             "matched_datapoints": self.matched_datapoints,
             "datapoints_after_filtering": self.datapoints_after_filtering,
             "image_filter_params": self.image_filter_params,
+            "sonar_config_params": self.sonar_params,
             "rosbag_connections_and_topics": self.rosbag_connections,
         }
         with open(self.save_dir / "info.json", "w") as fp:
