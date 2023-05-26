@@ -4,6 +4,7 @@ __pycache__
 
 data
 sandbox
+lightning_logs
 
 # WandB offline logging dir
 wandb
