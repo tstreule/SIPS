@@ -13,7 +13,7 @@
   "editor.formatOnSave": true,
   // Formatting: Python
   "python.formatting.provider": "black",
-  "python.formatting.blackArgs": ["--line-length=88"],
+  "python.formatting.blackArgs": ["--config", "pyproject.toml"],
   "isort.args": ["--profile", "black"],
   "[python]": {
     "editor.defaultFormatter": "ms-python.python",
