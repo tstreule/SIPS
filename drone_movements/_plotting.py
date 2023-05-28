@@ -1,5 +1,5 @@
 """
-Tools for visualizing camear poses.
+Tools for visualizing camera poses.
 
 """
 import numpy as np
