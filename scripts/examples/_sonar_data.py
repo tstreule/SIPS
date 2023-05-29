@@ -1,12 +1,21 @@
 import torch
+from scipy.spatial.transform import Rotation as R
 
 from sips.dataclasses import CameraParams, SonarDatum, SonarDatumTuple
 
 __all__ = ["SONAR_TUPLE", "get_random_datum", "get_random_datum_tuple"]
 
 
-# TODO: Delete this dummy example as soon as "get_random_datum" function implemented
 # Make dummy image and pose
+# Note that you can easily make a new pose e.g. by:
+#  import drone_movements as dm
+#  pose = dm.CameraPose()
+#  track = dm.CameraPoseTracker(pose)
+#  track.move(surge=4, sway=3, heave=2, yaw=-30, pitch=20)
+#  xyzlim = (-10, 10)
+#  dm.CameraPoseVisualizer(10, 60, 15, xlim=xyzlim, ylim=xyzlim, zlim=xyzlim).plot(track)
+#  for p in track.abs_history:
+#      print(p.position.tolist(), p.get_quat().tolist())
 _IMAGE = torch.zeros(512, 512)
 _PARAMS = CameraParams(min_range=1, max_range=10, azimuth=130, elevation=20)
 _POSE_1 = ((0, 0, 0), (0, 0, 0, 1))
@@ -15,21 +24,21 @@ SONAR_TUPLE = SonarDatumTuple((_IMAGE, _POSE_1, _PARAMS), (_IMAGE, _POSE_2, _PAR
 
 
 def get_random_datum(seed: int | None = None) -> SonarDatum:
-    # TODO: Randomly make dummy image and pose
-    #  Note that you can easily make a new pose e.g. by:
-    #  from scripts.drone_movements.generate import *
-    #  pose = CameraPose()
-    #  track = CameraPoseTracker(pose)
-    #  track.move(surge=4, sway=3, heave=2, yaw=-30, pitch=20)
-    #  xyzlim = (-10, 10)
-    #  CameraPoseVisualizer(10, 60, 15, xlim=xyzlim, ylim=xyzlim, zlim=xyzlim).plot(track)
-    #  for p in track.abs_history:
-    #      print(p.position.tolist(), p.get_quat().tolist())
-    raise NotImplementedError
+
+    if seed is not None:
+        raise NotImplementedError
+
+    # Make random image
+    image = torch.normal(_IMAGE * 0)
+
+    # Make random pose
+    position = torch.normal(torch.zeros(3), 1)  # meters
+    xyz_rotation = torch.normal(torch.zeros(3), 5)  # degrees
+    rotation = R.from_euler("xyz", xyz_rotation, degrees=True).as_quat()
+
+    return SonarDatum(image, (position, rotation), _PARAMS)
 
 
 def get_random_datum_tuple(seed: int | None = None) -> SonarDatumTuple:
-    print("WARNING: Returning static SonarDatumTuple -> not yet implemented...")
-    return SONAR_TUPLE
-    # TODO: The first datum maybe always should be centered and with initial orientation
-    return SonarDatumTuple(get_random_datum(seed=seed), get_random_datum(seed=None))
+    seed2 = seed + 1 if seed is not None else None
+    return SonarDatumTuple(get_random_datum(seed=seed), get_random_datum(seed=seed2))

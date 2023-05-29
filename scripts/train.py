@@ -4,20 +4,21 @@ from pytorch_lightning import Trainer, seed_everything
 
 from sips.configs import parse_train_file
 from sips.datasets import SonarDataModule
+from sips.models import KeypointNetwithIOLoss
 
 
 def main():
     # Read configuration
     config = parse_train_file("sips/configs/v0_dummy.yaml")
 
+    # Initialize model and data module
+    model = KeypointNetwithIOLoss(**asdict(config.model))
+    dm = SonarDataModule(config.datasets)
+
     # Initialize trainer and make everything reproducible
     # c.f. https://lightning.ai/docs/pytorch/stable/common/trainer.html#reproducibility
     seed_everything(config.arch.seed, workers=True)
-    trainer = Trainer(deterministic=True)
-
-    # Initialize model and data module
-    model = Model(**asdict(config.model.params))
-    dm = SonarDataModule(config.datasets)
+    trainer = Trainer(deterministic=True, callbacks=None, accelerator="cpu")
 
     # Train model
     trainer.fit(model, datamodule=dm, ckpt_path=None)

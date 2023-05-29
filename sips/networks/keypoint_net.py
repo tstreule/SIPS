@@ -1,12 +1,11 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
-import pytorch_lightning as pl
 import torch
 
 from sips.utils.image import image_grid
 
 
-class KeypointNet(pl.LightningModule):
+class KeypointNet(torch.nn.Module):
     """
     Keypoint detection network.
 

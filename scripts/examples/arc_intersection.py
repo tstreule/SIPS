@@ -15,7 +15,7 @@ from sips.utils.point_projection import uv_to_xyz, xyz_to_uv
 
 def main():
     # Set data
-    sonar_tuple = get_random_datum_tuple(seed=123)
+    sonar_tuple = get_random_datum_tuple()
     sonar1 = sonar_tuple.sonar1
     sonar2 = sonar_tuple.sonar2
     width, height = sonar1.image.shape
