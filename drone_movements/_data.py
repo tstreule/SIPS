@@ -11,7 +11,7 @@ import pandas as pd
 from scipy.spatial.transform import Rotation as R
 from typing_extensions import Self
 
-from sips.dataclasses import CameraPose, CameraPosition, CameraRotation
+from sips.data import CameraPose, CameraPosition, CameraRotation
 
 __all__ = ["Movement", "MovableCameraPose", "CameraPoseTracker"]
 

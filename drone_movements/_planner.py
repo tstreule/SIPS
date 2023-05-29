@@ -6,7 +6,6 @@ import math
 from typing import Literal
 
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 
 from drone_movements._data import CameraPoseTracker
 
