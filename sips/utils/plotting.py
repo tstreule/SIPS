@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 
-from sips.dataclasses import CameraPosition
+from sips.data import CameraPosition
 
 # ==============================================================================
 # Colors

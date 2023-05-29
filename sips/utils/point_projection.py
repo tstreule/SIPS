@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 from scipy.spatial.transform import Rotation as R
 
-from sips.dataclasses import CameraParams, CameraPose, SonarDatum, SonarDatumTuple
+from sips.data import CameraParams, CameraPose, SonarDatum
 
 
 def _xyz_to_rtp(

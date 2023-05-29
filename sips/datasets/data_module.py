@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
 from sips.configs.base_config import _DatasetsConfig
-from sips.dataclasses import SonarDatumTuple
+from sips.data import SonarDatumTuple
 from sips.datasets.dataset import DummySonarDataSet, SonarDataset
 
 

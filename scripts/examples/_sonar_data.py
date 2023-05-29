@@ -1,7 +1,7 @@
 import torch
 from scipy.spatial.transform import Rotation as R
 
-from sips.dataclasses import CameraParams, SonarDatum, SonarDatumTuple
+from sips.data import CameraParams, SonarDatum, SonarDatumTuple
 
 __all__ = ["SONAR_TUPLE", "get_random_datum", "get_random_datum_tuple"]
 

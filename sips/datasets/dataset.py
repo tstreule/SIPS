@@ -3,7 +3,7 @@ from warnings import warn
 from torch.utils.data import Dataset
 
 from scripts.examples._sonar_data import get_random_datum_tuple
-from sips.dataclasses import SonarDatumTuple
+from sips.data import SonarDatumTuple
 
 
 class SonarDataset(Dataset[SonarDatumTuple]):
