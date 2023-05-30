@@ -4,7 +4,7 @@ Dataclasses for handling sonar data.
 """
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -18,6 +18,38 @@ __all__ = [
     "CameraParams",
     "SonarDatumTuple",
 ]
+
+# ==============================================================================
+# Utils
+
+_T = TypeVar("_T")
+
+
+def _ensure_class(value: tuple[Any, ...] | dict[str, Any] | _T, cls: type[_T]) -> _T:
+    """
+    Ensure that an input is of type ``cls``. Instantiate if needed.
+
+    Parameters
+    ----------
+    value : tuple[Any, ...] | dict[str, Any] | _T
+        Input to be checked.
+    cls : type[_T]
+        Required type of the ``value``.
+
+    Returns
+    -------
+    _T
+        Instantiated input.
+
+    """
+    if isinstance(value, tuple):
+        return cls(*value)  # type: ignore[call-arg]
+    elif isinstance(value, dict):
+        return cls(**value)
+    elif not isinstance(value, cls):
+        raise ValueError(f"Unsupported type {type(value)} - expected {type(cls)}")
+    return value
+
 
 # ==============================================================================
 # Sonar Camera Parameters
@@ -74,25 +106,14 @@ class CameraPose:
         self, position: "_CameraPositionLike", rotation: "_CameraRotationLike"
     ) -> None:
 
-        # Set position
-        if isinstance(position, tuple):
-            self.position = CameraPosition(*position)
-        elif isinstance(position, dict):
-            self.position = CameraPosition(**position)
-        elif not isinstance(position, CameraPosition):
-            raise ValueError("Unsupported position dtype.")
-        else:
-            self.position = position
+        self.position = _ensure_class(position, CameraPosition)
+        self.rotation = _ensure_class(rotation, CameraRotation)
 
-        # Set rotation
-        if isinstance(rotation, tuple):
-            self.rotation = CameraRotation(*rotation)
-        elif isinstance(rotation, dict):
-            self.rotation = CameraRotation(**rotation)
-        elif not isinstance(rotation, CameraRotation):
-            raise ValueError("Unsupported rotation dtype.")
-        else:
-            self.rotation = rotation
+    def as_extrinsic(self) -> npt.NDArray[np.float64]:
+        matrix = np.eye(4)
+        matrix[:-1, -1] = self.position.as_array()
+        matrix[:3, :3] = self.rotation.rot.as_matrix()
+        return matrix
 
 
 @dataclass(init=False)
@@ -167,26 +188,9 @@ class SonarDatum:
         self, image: torch.Tensor, pose: _CameraPoseLike, params: _CameraParamsLike
     ) -> None:
 
-        # Set camera image
         self.image = torch.as_tensor(image)
-
-        # Set camera pose
-        if isinstance(pose, tuple):
-            pose = CameraPose(*pose)
-        elif isinstance(pose, dict):
-            pose = CameraPose(**pose)
-        elif not isinstance(pose, CameraPose):
-            raise ValueError("Invalid camera pose type")
-        self.pose = pose
-
-        # Set camera params
-        if isinstance(params, tuple):
-            params = CameraParams(*params)
-        elif isinstance(params, dict):
-            params = CameraParams(**params)
-        elif not isinstance(params, CameraParams):
-            raise ValueError("Invalid camera params type")
-        self.params = params
+        self.pose = _ensure_class(pose, CameraPose)
+        self.params = _ensure_class(params, CameraParams)
 
 
 @dataclass(init=False)
@@ -199,16 +203,8 @@ class SonarDatumTuple:
     sonar2: SonarDatum = field(repr=False)
 
     def __init__(self, sonar1: "_SonarDatumLike", sonar2: "_SonarDatumLike") -> None:
-
-        for i, sonar in enumerate((sonar1, sonar2)):
-            if isinstance(sonar, tuple):
-                sonar = SonarDatum(*sonar)
-            elif isinstance(sonar, dict):
-                sonar = SonarDatum(**sonar)
-            elif not isinstance(sonar, SonarDatum):
-                raise ValueError(f"Invaid sonar{i+1} datum type")
-
-            setattr(self, f"sonar{i+1}", sonar)
+        self.sonar1 = _ensure_class(sonar1, SonarDatum)
+        self.sonar2 = _ensure_class(sonar2, SonarDatum)
 
 
 # ---
