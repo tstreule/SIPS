@@ -226,8 +226,8 @@ def camera2drone(
     for i in range(1, len(camera_tracker)):
 
         # Get previous camera and drone orientation
-        prev_camera_orient = camera_tracker.abs_history[i - 1].rotation.rot
-        prev_drone_orient = drone_tracker.abs_history[i - 1].rotation.rot
+        prev_camera_orient = R.from_quat(camera_tracker.abs_history[i - 1].rotation)
+        prev_drone_orient = R.from_quat(drone_tracker.abs_history[i - 1].rotation)
 
         # Find relative drone movement
         delta_camera = camera_tracker.rel_history[i]
@@ -235,9 +235,9 @@ def camera2drone(
         drone_mov = (prev_drone_orient.inv() * prev_camera_orient).apply(camera_mov)
 
         # Find relative drone rotation
-        next_drone_orient = (
-            camera_tracker.abs_history[i].copy().pitch(-angle, degrees=degrees)
-        ).rotation.rot
+        next_drone_orient = R.from_quat(
+            camera_tracker.abs_history[i].copy().pitch(-angle, degrees=degrees).rotation
+        )
         drone_rot = (next_drone_orient.inv() * prev_drone_orient).inv()
 
         # Apply
@@ -248,8 +248,8 @@ def camera2drone(
 
         # Assert equal camera and drone position
         np.testing.assert_allclose(
-            drone_tracker.abs_history[i].position.as_array(),
-            camera_tracker.abs_history[i].position.as_array(),
+            drone_tracker.abs_history[i].position,
+            camera_tracker.abs_history[i].position,
             rtol=1e-15,
             atol=1e-14,
         )

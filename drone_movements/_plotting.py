@@ -132,7 +132,7 @@ class CameraPoseVisualizer:
             ]
         )
         # Adjust the pose of the vertices
-        vertex_trsf = (vertex_std @ pose.as_extrinsic().T)[:, :-1]
+        vertex_trsf = (vertex_std @ pose.as_extrinsic().numpy().T)[:, :-1]
         meshes = [
             [vertex_trsf[0], vertex_trsf[1], vertex_trsf[2]],
             [vertex_trsf[0], vertex_trsf[2], vertex_trsf[3]],

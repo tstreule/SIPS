@@ -39,19 +39,12 @@ class _WandBConfig:
 
 
 @dataclass
-class _ModelSchedulerConfig:
-    decay: float = 0.5  #                    # Scheduler decay rate
-    lr_epoch_divide_frequency: int = 40  #   # Schedule number of epochs when to decay the initial learning rate by decay rate
+class _ModelConfig:
+    # Checkpointing
+    checkpoint_path: str = "/data/experiments/sips/"
+    save_checkpoint: bool = True
 
-
-@dataclass
-class _ModelOptimizerConfig:
-    learning_rate: float = 0.001
-    weight_decay: float = 0.0
-
-
-@dataclass
-class _ModelParamsConfig:
+    # Model parameters
     keypoint_loss_weight: float = 1.0  #     # Keypoint loss weight
     descriptor_loss_weight: float = 1.0  #   # Descriptor loss weight
     score_loss_weight = 1.0  #               # Score loss weight
@@ -62,22 +55,13 @@ class _ModelParamsConfig:
     descriptor_loss: bool = True  #          # Use hardest neg. mining descriptor loss
     keypoint_net_type: str = "KeypointNet"  ## Type of keypoint network. Supported ['KeypointNet', 'KeypointResnet']
 
+    # Optimizer
+    opt_learn_rate: float = 0.001
+    opt_weight_decay: float = 0.0
 
-@dataclass
-class _ModelConfig:
-    checkpoint_path: str = "/data/experiments/sips/"
-    save_checkpoint: bool = True
-    scheduler: _ModelSchedulerConfig = _ModelSchedulerConfig()
-    optimizer: _ModelOptimizerConfig = _ModelOptimizerConfig()
-    params: _ModelParamsConfig = _ModelParamsConfig()
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.scheduler, _ModelSchedulerConfig):
-            self.scheduler = _ModelSchedulerConfig(**self.scheduler)
-        if not isinstance(self.optimizer, _ModelOptimizerConfig):
-            self.optimizer = _ModelOptimizerConfig(**self.optimizer)
-        if not isinstance(self.params, _ModelParamsConfig):
-            self.params = _ModelParamsConfig(**self.params)
+    # Scheduler
+    sched_decay_rate: float = 0.5  #         # Scheduler decay rate
+    sched_decay_frequency: int = 40  #       # Number of epochs when to decay the initial learning rate by decay rate
 
 
 # --------------------------------------------------------------------------
@@ -85,28 +69,15 @@ class _ModelConfig:
 
 
 @dataclass
-class _DatasetsAugmentConfig:
-    image_shape: tuple[int, int] = (240, 320)  #       # Image shape
-
-
-@dataclass
-class _DatasetsTrainConfig:
-    batch_size: int = 8  #                   # Training batch size
-    num_workers: int = 16  #                 # Training number of workers
-    path: str = "/data/datasets/"  #         # Training data path
-    repeat: int = 1  #                       # Number of times training dataset is repeated per epoch
-
-
-@dataclass
 class _DatasetsConfig:
-    augmentation: _DatasetsAugmentConfig = _DatasetsAugmentConfig()
-    train: _DatasetsTrainConfig = _DatasetsTrainConfig()
+    # Augmentation
+    image_shape: tuple[int, int] = (240, 320)  #  # Image shape
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.augmentation, _DatasetsAugmentConfig):
-            self.augmentation = _DatasetsAugmentConfig(**self.augmentation)
-        if not isinstance(self.train, _DatasetsTrainConfig):
-            self.train = _DatasetsTrainConfig(**self.train)
+    # Train configuration
+    batch_size: int = 8  #                        # Training batch size
+    num_workers: int = 16  #                      # Training number of workers
+    path: str = "/data/datasets/"  #              # Training data path
+    repeat: int = 1  #                            # Number of times training dataset is repeated per epoch
 
 
 # --------------------------------------------------------------------------

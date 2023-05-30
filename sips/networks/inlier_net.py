@@ -1,6 +1,5 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
-import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 
@@ -9,7 +8,7 @@ import torch.nn.functional as F
 # Code adapted from https://github.com/vislearn/ngransac/blob/master/network.py
 
 
-class InlierNet(pl.LightningModule):
+class InlierNet(torch.nn.Module):
     def __init__(self, blocks: int) -> None:
         super(InlierNet, self).__init__()
 

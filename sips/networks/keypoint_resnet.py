@@ -1,7 +1,6 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
 import numpy as np
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,7 +15,7 @@ def upsample(x: torch.Tensor) -> torch.Tensor:
     return F.interpolate(x, scale_factor=2, mode="nearest")
 
 
-class conv_bn_elu(pl.LightningModule):
+class conv_bn_elu(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super(conv_bn_elu, self).__init__()
 
@@ -37,7 +36,7 @@ class conv_bn_elu(pl.LightningModule):
         return self.conv(x)
 
 
-class KeypointEncoder(pl.LightningModule):
+class KeypointEncoder(torch.nn.Module):
     def __init__(self, pretrained: bool, with_drop: bool) -> None:
         super(KeypointEncoder, self).__init__()
 
@@ -74,7 +73,7 @@ class KeypointEncoder(pl.LightningModule):
         return self.features
 
 
-class KeypointDecoder(pl.LightningModule):
+class KeypointDecoder(torch.nn.Module):
     def __init__(self) -> None:
         super(KeypointDecoder, self).__init__()
 
@@ -208,7 +207,7 @@ class KeypointDecoder(pl.LightningModule):
         return self.outputs
 
 
-class KeypointResnet(pl.LightningModule):
+class KeypointResnet(torch.nn.Module):
     def __init__(self, with_drop: bool = True) -> None:
         super().__init__()
         print("Instantiating keypoint resnet")
