@@ -5,6 +5,7 @@ Example script to time and visualize arc projections and matching of sonar image
 from time import time
 
 import torch
+import typer
 from matplotlib import pyplot as plt
 
 from scripts.examples._sonar_data import get_random_batch
@@ -17,6 +18,8 @@ from sips.utils.plotting import (
     plot_arcs_3d,
 )
 from sips.utils.point_projection import batch_uv_to_xyz, batch_warp_image
+
+app = typer.Typer()
 
 
 def make_uv_grid(
@@ -40,11 +43,12 @@ def make_uv_grid(
     return grid + torch.normal(0, std), grid + torch.normal(0, std)
 
 
+@app.callback(invoke_without_command=True)
 def main(
     batch_size: int = 8,
     conv_size: int = 8,
     distance_threshold: float = 0.5,
-    plot: bool = False,
+    plot: bool = True,
     timeit: bool = True,
 ):
 
@@ -113,4 +117,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    app()
