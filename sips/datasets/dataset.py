@@ -2,11 +2,11 @@ from warnings import warn
 
 from torch.utils.data import Dataset
 
-from scripts.examples._sonar_data import get_random_datum_tuple
-from sips.data import SonarDatumTuple
+from scripts.examples._sonar_data import get_random_datum_pair
+from sips.data import SonarDatumPair
 
 
-class SonarDataset(Dataset[SonarDatumTuple]):
+class SonarDataset(Dataset[SonarDatumPair]):
     # TODO: Implement
 
     def __init__(self) -> None:
@@ -15,11 +15,11 @@ class SonarDataset(Dataset[SonarDatumTuple]):
     def __len__(self) -> int:
         raise NotImplementedError
 
-    def __getitem__(self, index) -> SonarDatumTuple:
+    def __getitem__(self, index) -> SonarDatumPair:
         # img = Image.open(self.paths[index]).convert("RGB")
         a = ...
         b = ...
-        return SonarDatumTuple(a, b)
+        return SonarDatumPair(a, b)
 
 
 class DummySonarDataSet(SonarDataset):
@@ -31,5 +31,5 @@ class DummySonarDataSet(SonarDataset):
     def __len__(self) -> int:
         return self.n
 
-    def __getitem__(self, index) -> SonarDatumTuple:
-        return get_random_datum_tuple()
+    def __getitem__(self, index) -> SonarDatumPair:
+        return get_random_datum_pair()

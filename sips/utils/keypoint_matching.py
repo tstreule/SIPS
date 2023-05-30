@@ -67,20 +67,24 @@ def match_keypoints_2d(
     kp1_uv: torch.Tensor,
     kp2_uv_proj: torch.Tensor,
     convolution_size: int,
+    distance_threshold: float = 0.5,
     window_size: int = 3,
-    distance_threshold: float = 12,
-):
+) -> tuple[torch.Tensor, torch.Tensor]:
     # NOTE: It is assumed that ``kp1_uv`` is ordered according to a meshgrid. Otherwize,
     #  the concept of "rounding" (convert to int) does not represent a index.
 
+    # Check input
+    C1, _, _ = kp1_uv.shape
+    D, C2, H, W = kp2_uv_proj.shape
+    assert C1 == C2 == 2
+
+    kp1_uv = kp1_uv.permute(1, 2, 0)  # H, W, C
+    kp2_uv_proj = kp2_uv_proj.view(D, C2, H * W).permute(2, 0, 1)  # (D, C, H*W)
+
     assert kp1_uv.device == kp2_uv_proj.device
-    _device = kp1_uv.device
+    device = kp1_uv.device
 
-    kp1_uv = torch.as_tensor(kp1_uv)
-    assert kp1_uv.ndim == 3
-    assert kp1_uv.shape[0] == kp1_uv.shape[1] and kp1_uv.shape[2] == 2
-    kp2_uv_proj = torch.as_tensor(kp2_uv_proj)
-
+    # Set padding and window size
     PAD = (window_size - 1) // 2
     window_shape = (window_size, window_size)
 
@@ -103,7 +107,7 @@ def match_keypoints_2d(
     masked_dists = torch.linalg.vector_norm(masked_diffs, dim=1)
     masked_dists = masked_dists.nan_to_num(torch.inf).reshape(-1, window_size**2)
     distances = torch.full(
-        (*kp2_mask.shape, window_size**2), torch.inf, device=_device
+        (*kp2_mask.shape, window_size**2), torch.inf, device=device
     )
     distances[kp2_mask] = masked_dists
 
@@ -118,7 +122,7 @@ def match_keypoints_2d(
     #  2) to get the index for the ``kp1_uv`` variable
     row, col = _unravel_index_2d(flat_dists_argmin, distances.shape[1:])
     kp2_uv_match = kp2_uv_proj.take_along_dim(row[:, None, None], 1).squeeze(1)
-    idx_kp1 = (kp2_uv_match / convolution_size).to(torch.int64)  # .flip(1)
+    idx_kp1 = torch.nan_to_num((kp2_uv_match / convolution_size), 0).to(torch.int64)
     idx_kp1_rel = torch.stack(_unravel_index_2d(col, window_shape), 1) - 1
     # clipping due to bad keypoints that didn't get projected onto the other image
     idx_kp1 = (idx_kp1 + idx_kp1_rel).clip(0)
@@ -128,7 +132,7 @@ def match_keypoints_2d(
 
     # Remove matches with distance greater than threshold
     mask_closest[mask_closest.clone()] = (
-        flat_dists_min[mask_closest.clone()] < distance_threshold
+        flat_dists_min[mask_closest.clone()] < convolution_size * distance_threshold
     )
     # >> SELECT ``kp1_uv``      WITH ``idx_kp1[mask_closest]`` AS INDEX
     # >> SELECT ``kp2_uv_proj`` WITH ``...`` AS INDEX
@@ -136,3 +140,29 @@ def match_keypoints_2d(
     kp1_uv_match = kp1_uv[tuple(idx_kp1.T)]
 
     return kp1_uv_match[mask_closest], kp2_uv_match[mask_closest]
+
+
+def batch_match_keypoints_2d(
+    kp1_uv: torch.Tensor,
+    kp2_uv_proj: torch.Tensor,
+    convolution_size: int,
+    distance_threshold: float = 0.5,
+    window_size: int = 3,
+) -> tuple[tuple[torch.Tensor, torch.Tensor], ...]:
+    batch_size = kp1_uv.shape[0]
+
+    # Apply for every batch index
+    kp1_uv_match: list[torch.Tensor] = []
+    kp2_uv_match: list[torch.Tensor] = []
+    for b in range(batch_size):
+        kp1_match, kp2_match = match_keypoints_2d(
+            kp1_uv[b],
+            kp2_uv_proj[b],
+            convolution_size,
+            distance_threshold,
+            window_size,
+        )
+        kp1_uv_match.append(kp1_match)
+        kp2_uv_match.append(kp2_match)
+
+    return tuple(zip(kp1_uv_match, kp2_uv_match))

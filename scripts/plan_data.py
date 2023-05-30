@@ -1,3 +1,7 @@
+"""
+Script for planning drone movements for data acquisition.
+
+"""
 from pathlib import Path
 from time import time
 

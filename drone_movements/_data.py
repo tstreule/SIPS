@@ -8,10 +8,11 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import torch
 from scipy.spatial.transform import Rotation as R
 from typing_extensions import Self
 
-from sips.data import CameraPose, CameraPosition, CameraRotation
+from sips.data import CameraPose
 
 __all__ = ["Movement", "MovableCameraPose", "CameraPoseTracker"]
 
@@ -71,28 +72,27 @@ class MovableCameraPose(CameraPose):
     def translate(self, dists: npt.ArrayLike) -> None:
         dists = np.asarray(dists)
         assert dists.shape == (3,), "Invalid dimensions"
-        x, y, z = dists
-        self.position.x += x
-        self.position.y += y
-        self.position.z += z
+        self.position += dists
 
     def surge(self, dist: float) -> Self:
-        self.translate(self.rotation.rot.apply([dist, 0, 0]))
+        self.translate(R.from_quat(self.rotation).apply([dist, 0, 0]))
         return self
 
     def sway(self, dist: float) -> Self:
-        self.translate(self.rotation.rot.apply([0, dist, 0]))
+        self.translate(R.from_quat(self.rotation).apply([0, dist, 0]))
         return self
 
     def heave(self, dist: float) -> Self:
-        self.translate(self.rotation.rot.apply([0, 0, dist]))
+        self.translate(R.from_quat(self.rotation).apply([0, 0, dist]))
         return self
 
     def rotate(self, angles: npt.ArrayLike, degrees: bool = True) -> None:
         angles = np.asarray(angles)
         rot = R.from_rotvec(angles, degrees=degrees)  # type: ignore
-        new_quat = (self.rotation.rot * rot).as_quat()
-        self.rotation = CameraRotation(*new_quat)
+
+        self.rotation[:] = torch.from_numpy(
+            (R.from_quat(self.rotation) * rot).as_quat()
+        )
 
     def roll(self, angle: float, degrees: bool = True) -> Self:
         self.rotate([angle, 0, 0], degrees=degrees)
@@ -107,9 +107,7 @@ class MovableCameraPose(CameraPose):
         return self
 
     def copy(self) -> "MovableCameraPose":
-        position = CameraPosition(*self.position.as_array())
-        rotation = CameraRotation(*self.rotation.rot.as_quat())
-        return MovableCameraPose(position, rotation)
+        return MovableCameraPose(self.position.clone(), self.rotation.clone())
 
 
 class CameraPoseTracker:
@@ -178,11 +176,7 @@ class CameraPoseTracker:
     # Utils
 
     def get_pos_limits(self) -> tuple[tuple[float, float], ...]:
-        xyz_arr = []
-        for pose in self.abs_history:
-            p = pose.position
-            xyz_arr.append([p.x, p.y, p.z])
-
+        xyz_arr = [pose.position.numpy() for pose in self.abs_history]
         xyz_mins = np.array(xyz_arr).min(0)
         xyz_maxs = np.array(xyz_arr).max(0)
 

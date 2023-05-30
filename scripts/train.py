@@ -1,3 +1,7 @@
+"""
+Script for SIPS training.
+
+"""
 from dataclasses import asdict
 
 from pytorch_lightning import Trainer, seed_everything
@@ -18,7 +22,7 @@ def main():
     # Initialize trainer and make everything reproducible
     # c.f. https://lightning.ai/docs/pytorch/stable/common/trainer.html#reproducibility
     seed_everything(config.arch.seed, workers=True)
-    trainer = Trainer(deterministic=True, callbacks=None, accelerator="cpu")
+    trainer = Trainer(deterministic=True, callbacks=None, accelerator="auto")
 
     # Train model
     trainer.fit(model, datamodule=dm, ckpt_path=None)

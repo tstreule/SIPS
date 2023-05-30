@@ -8,9 +8,8 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 
-from sips.networks.inlier_net import InlierNet
-from sips.networks.keypoint_net import KeypointNet
-from sips.networks.keypoint_resnet import KeypointResnet
+from sips.data import SonarBatch
+from sips.networks import InlierNet, KeypointNet, KeypointResnet
 
 
 class KeypointNetwithIOLoss(pl.LightningModule):
@@ -88,14 +87,14 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             weight_decay=self.opt_weight_decay,
         )
 
-    def forward(self, batch):
+    def forward(self, batch: SonarBatch):
         raise NotImplementedError
 
-    def training_step(self, batch, batch_idx: int):
+    def training_step(self, batch: SonarBatch, batch_idx: int):
         raise NotImplementedError
 
-    def validation_step(self, batch, batch_idx: int):
+    def validation_step(self, batch: SonarBatch, batch_idx: int):
         raise NotImplementedError
 
-    def test_step(self, batch, batch_idx: int):
+    def test_step(self, batch: SonarBatch, batch_idx: int):
         raise NotImplementedError

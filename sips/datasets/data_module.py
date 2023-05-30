@@ -2,14 +2,8 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
 from sips.configs.base_config import _DatasetsConfig
-from sips.data import SonarDatumTuple
+from sips.data import SonarBatch, SonarDatumPair
 from sips.datasets.dataset import DummySonarDataSet, SonarDataset
-
-
-def sonar_collate_fn(batch: list[SonarDatumTuple]) -> list[SonarDatumTuple]:
-    assert isinstance(batch[0], SonarDatumTuple)
-    # TODO: This is is not yet nice
-    return batch
 
 
 class SonarDataModule(pl.LightningDataModule):
@@ -50,16 +44,12 @@ class SonarDataModule(pl.LightningDataModule):
         self.data_train: SonarDataset = DummySonarDataSet(n=100)
         self.data_val: SonarDataset = DummySonarDataSet(n=10)
 
-    def train_dataloader(self) -> DataLoader[SonarDatumTuple]:
+    def train_dataloader(self) -> DataLoader[SonarDatumPair]:
         return DataLoader(
-            self.data_train,
-            batch_size=self.config.batch_size,
-            collate_fn=sonar_collate_fn,
+            self.data_train, batch_size=self.config.batch_size, collate_fn=SonarBatch
         )
 
-    def val_dataloader(self) -> DataLoader[SonarDatumTuple]:
+    def val_dataloader(self) -> DataLoader[SonarDatumPair]:
         return DataLoader(
-            self.data_val,
-            batch_size=self.config.batch_size,
-            collate_fn=sonar_collate_fn,
+            self.data_val, batch_size=self.config.batch_size, collate_fn=SonarBatch
         )

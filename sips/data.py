@@ -2,22 +2,13 @@
 Dataclasses for handling sonar data.
 
 """
-import math
-from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from dataclasses import dataclass, fields
+from typing import Any, Iterable, TypeVar, cast
 
-import numpy as np
-import numpy.typing as npt
 import torch
 from scipy.spatial.transform import Rotation as R
 
-__all__ = [
-    "CameraPosition",
-    "CameraRotation",
-    "CameraPose",
-    "CameraParams",
-    "SonarDatumTuple",
-]
+__all__ = ["CameraPose", "CameraParams", "SonarDatum", "SonarDatumPair", "SonarBatch"]
 
 # ==============================================================================
 # Utils
@@ -43,54 +34,16 @@ def _ensure_class(value: tuple[Any, ...] | dict[str, Any] | _T, cls: type[_T]) -
 
     """
     if isinstance(value, tuple):
-        return cls(*value)  # type: ignore[call-arg]
+        return cls(*value)
     elif isinstance(value, dict):
         return cls(**value)
     elif not isinstance(value, cls):
-        raise ValueError(f"Unsupported type {type(value)} - expected {type(cls)}")
+        raise ValueError(f"Unsupported type '{type(value)}' - expected '{cls}'")
     return value
 
 
 # ==============================================================================
 # Sonar Camera Parameters
-
-
-@dataclass
-class CameraPosition:
-    """
-    Stores xyz-position.
-    """
-
-    x: float
-    y: float
-    z: float
-
-    def as_array(self) -> npt.NDArray[np.float64]:
-        """Array representation of the position."""
-        return np.array([self.x, self.y, self.z])
-
-    def as_tensor(self) -> torch.Tensor:
-        """Array representation of the position."""
-        return torch.tensor([self.x, self.y, self.z])
-
-
-@dataclass
-class CameraRotation:
-    """
-    Stores xyzw-orientation (quaternion).
-    """
-
-    x: float
-    y: float
-    z: float
-    w: float
-
-    def __post_init__(self) -> None:
-        quat = np.array([self.x, self.y, self.z, self.w])
-        self.rot = R.from_quat(quat)
-        # Safety check
-        if not np.allclose(self.rot.as_quat(), quat):
-            raise ValueError("Invalid camera rotation quaternion")
 
 
 @dataclass(init=False)
@@ -99,24 +52,25 @@ class CameraPose:
     Stores xyz-position and xyzw-orientation (quaternion).
     """
 
-    position: CameraPosition
-    rotation: CameraRotation
+    position: torch.Tensor  # (3,)
+    rotation: torch.Tensor  # (4,)
 
-    def __init__(
-        self, position: "_CameraPositionLike", rotation: "_CameraRotationLike"
-    ) -> None:
+    def __init__(self, position: "_FloatIterable", rotation: "_FloatIterable") -> None:
+        self.position = torch.as_tensor(position).float()
+        assert self.position.shape == (3,)
 
-        self.position = _ensure_class(position, CameraPosition)
-        self.rotation = _ensure_class(rotation, CameraRotation)
+        rotation = R.from_quat(torch.as_tensor(rotation)).as_quat()
+        self.rotation = torch.from_numpy(rotation).float()
+        assert self.rotation.shape == (4,)
 
-    def as_extrinsic(self) -> npt.NDArray[np.float64]:
-        matrix = np.eye(4)
-        matrix[:-1, -1] = self.position.as_array()
-        matrix[:3, :3] = self.rotation.rot.as_matrix()
+    def as_extrinsic(self) -> torch.Tensor:
+        matrix = torch.eye(4)
+        matrix[:-1, -1] = self.position
+        matrix[:3, :3] = torch.from_numpy(R.from_quat(self.rotation).as_matrix())
         return matrix
 
 
-@dataclass(init=False)
+@dataclass
 class CameraParams:
     """
     Stores sonar camera parameters.
@@ -131,91 +85,112 @@ class CameraParams:
     max_range: float
     azimuth: float
     elevation: float
+    degrees: bool = True
 
-    def __init__(
-        self,
-        min_range: float,
-        max_range: float,
-        azimuth: float,
-        elevation: float,
-        degrees: bool = True,
-    ) -> None:
-
-        if not 0 <= min_range < max_range:
+    def __post_init__(self) -> None:
+        if not 0 <= self.min_range < self.max_range:
             raise ValueError("Invalid camera range")
-        self.min_range = min_range
-        self.max_range = max_range
-
-        if not degrees:  # enforce degrees
-            azimuth = azimuth / math.pi * 180
-            elevation = elevation / math.pi * 180
-        self.azimuth = azimuth
-        self.elevation = elevation
-
-    @property
-    def degrees(self) -> bool:  # note that degrees are enforced above
-        """``True`` if the stored angles are given in degrees."""
-        return True
-
-
-# ---
-# TYPE HINTING
-_CameraPositionLike = CameraPosition | dict[str, float] | tuple[float, float, float]
-_CameraRotationLike = (
-    CameraRotation | dict[str, float] | tuple[float, float, float, float]
-)
-_CameraPoseLike = (
-    CameraPose | dict[str, Any] | tuple[_CameraPositionLike, _CameraRotationLike]
-)
-_CameraParamsLike = CameraParams | dict[str, Any] | tuple[float, float, float, float]
+        # Enforce degrees
+        if not self.degrees:
+            self.azimuth = self.azimuth / torch.pi * 180
+            self.elevation = self.elevation / torch.pi * 180
+            self.degrees = True
 
 
 # ==============================================================================
-# Sonar Data Tuple (for training)
+# Sonar Data Instances
 
 
 @dataclass(init=False)
 class SonarDatum:
     """
-    Sonar datum containing camera image, camera pose and camera parameters.
+    Stores sonar image, pose and camera parameters.
     """
 
-    image: torch.Tensor
+    image: torch.Tensor  # (H,W,C)
     pose: CameraPose
     params: CameraParams
 
     def __init__(
-        self, image: torch.Tensor, pose: _CameraPoseLike, params: _CameraParamsLike
+        self,
+        image: "_FloatIterable",
+        pose: "_CameraPoseLike",
+        params: "_CameraParamsLike",
     ) -> None:
-
         self.image = torch.as_tensor(image)
+        assert self.image.ndim == 3
         self.pose = _ensure_class(pose, CameraPose)
         self.params = _ensure_class(params, CameraParams)
 
+    def __repr__(self) -> str:
+        fieldreprs = [f"{f.name}=..." for f in fields(self)]
+        return f"{type(self).__name__}({', '.join(fieldreprs)})"
+
 
 @dataclass(init=False)
-class SonarDatumTuple:
+class SonarDatumPair:
     """
-    Sonar datum tuple for KeypointNet training.
+    Sonar datum pair for KeypointNet training.
     """
 
-    sonar1: SonarDatum = field(repr=False)
-    sonar2: SonarDatum = field(repr=False)
+    image1: torch.Tensor  # (H,W,C)
+    image2: torch.Tensor  # (H,W,C)
+    pose1: CameraPose
+    pose2: CameraPose
+    params1: CameraParams
+    params2: CameraParams
 
     def __init__(self, sonar1: "_SonarDatumLike", sonar2: "_SonarDatumLike") -> None:
-        self.sonar1 = _ensure_class(sonar1, SonarDatum)
-        self.sonar2 = _ensure_class(sonar2, SonarDatum)
+        sonar1 = _ensure_class(sonar1, SonarDatum)
+        self.image1 = sonar1.image
+        self.pose1 = sonar1.pose
+        self.params1 = sonar1.params
+
+        sonar2 = _ensure_class(sonar2, SonarDatum)
+        self.image2 = sonar2.image
+        self.pose2 = sonar2.pose
+        self.params2 = sonar2.params
+
+    def __repr__(self) -> str:
+        fieldreprs = [f"{f.name}=..." for f in fields(self)]
+        return f"{type(self).__name__}({', '.join(fieldreprs)})"
 
 
-# ---
-# TYPE HINTING
-_SonarDatumLike = (
-    SonarDatum
-    | dict[str, Any]
-    | tuple[torch.Tensor, _CameraPoseLike, _CameraParamsLike]
+@dataclass(init=False)
+class SonarBatch:
+    image1: torch.Tensor  # (B,H,W,C)
+    image2: torch.Tensor  # (B,H,W,C)
+    pose1: list[CameraPose]
+    pose2: list[CameraPose]
+    params1: list[CameraParams]
+    params2: list[CameraParams]
+
+    def __init__(self, batch: Iterable["_SonarDatumPairLike"]) -> None:
+        batch = [_ensure_class(x, SonarDatumPair) for x in batch]
+        batch = cast(list[SonarDatumPair], batch)
+
+        self.image1 = torch.stack([x.image1 for x in batch])
+        self.image2 = torch.stack([x.image2 for x in batch])
+        self.pose1 = [x.pose1 for x in batch]
+        self.pose2 = [x.pose2 for x in batch]
+        self.params1 = [x.params1 for x in batch]
+        self.params2 = [x.params2 for x in batch]
+
+    def __repr__(self) -> str:
+        fieldreprs = [f"{f.name}=..." for f in fields(self)]
+        return f"{type(self).__name__}({', '.join(fieldreprs)})"
+
+
+# ==============================================================================
+# Type Hinting
+
+
+_FloatIterable = Iterable[float] | torch.Tensor
+_CameraPoseLike = CameraPose | tuple[_FloatIterable, _FloatIterable]
+_CameraParamsLike = (
+    CameraParams
+    | tuple[float, float, float, float]
+    | tuple[float, float, float, float, bool]
 )
-_SonarDatumTupleLike = (
-    SonarDatumTuple
-    | dict[str, _SonarDatumLike]
-    | tuple[_SonarDatumLike, _SonarDatumLike]
-)
+_SonarDatumLike = SonarDatum | tuple[_FloatIterable, _CameraPoseLike, _CameraParamsLike]
+_SonarDatumPairLike = SonarDatumPair | tuple[_SonarDatumLike, _SonarDatumLike]

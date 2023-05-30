@@ -1,8 +1,8 @@
+from typing import Iterable
+
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-
-from sips.data import CameraPosition
 
 # ==============================================================================
 # Colors
@@ -96,8 +96,8 @@ def plot_arcs_2d(
 
 
 def plot_arcs_3d(
-    keypoints_xyz: npt.ArrayLike,
-    camera_pos: CameraPosition | list[CameraPosition | None] | None = None,
+    keypoints_xyz: list[npt.ArrayLike],
+    camera_pos: list[npt.ArrayLike | None] | None = None,
     colors: str | list[str] | None = None,
 ) -> plt.Axes:
     """
@@ -105,9 +105,9 @@ def plot_arcs_3d(
 
     Parameters
     ----------
-    keypoints_xyz : npt.ArrayLike
+    keypoints_xyz : list[npt.ArrayLike]
         Keypoints of shape (..., n_elevations, 3).
-    camera_pos : CameraPosition | list[CameraPosition  |  None] | None, optional
+    camera_pos : list[npt.ArrayLike | None] | None, optional
         Camera position for the (set of) keypoints, by default None
     colors : str | list[str] | None, optional
         Colors of the keypoints, by default None
@@ -119,12 +119,16 @@ def plot_arcs_3d(
 
     """
     # Handle input
-    keypoints_xyz = [np.asarray(kp_xyz, np.float64) for kp_xyz in keypoints_xyz]  # type: ignore
-    assert all(kp_xyz.shape[-1] == 3 and kp_xyz.ndim == 3 for kp_xyz in keypoints_xyz)
+    keypoints_xyz = [np.array(kp_xyz, np.float64) for kp_xyz in keypoints_xyz]
+    assert all(kp_xyz.shape[-1] == 3 and kp_xyz.ndim == 3 for kp_xyz in keypoints_xyz)  # type: ignore
     # Camera positions
-    camera_positions = np.asarray(camera_pos)
-    if camera_positions.ndim == 0:
-        camera_positions = camera_positions.repeat(len(keypoints_xyz))
+    camera_positions: list[Iterable[float] | None]
+    if camera_pos is None:
+        camera_positions = [None] * len(keypoints_xyz)  # type: ignore
+    else:
+        camera_positions = [
+            np.asarray(cp) if cp is not None else None for cp in camera_pos
+        ]
     # Colors
     if colors is None:
         colors = COLOR_SEQUENCE
@@ -137,10 +141,11 @@ def plot_arcs_3d(
 
     for color, pos, arcs in zip(colors, camera_positions, keypoints_xyz):
         # Plot camera location
-        if isinstance(pos, CameraPosition):
-            ax.scatter(pos.x, pos.y, pos.z, marker="o", color=color)
+        if pos is not None:
+            x, y, z = pos
+            ax.scatter(x, y, z, marker="o", color=color)
         # Plot arcs
-        for arc in arcs:
+        for arc in np.asarray(arcs):
             kwargs = dict(color=color, alpha=0.2, linewidth=1.8)
             ax.plot(arc[:, 0], arc[:, 1], arc[:, 2], **kwargs)
 
