@@ -16,13 +16,14 @@ def _unravel_index_2d(
 
 
 def _torch_lexsort(keys: torch.Tensor, dim: int = -1) -> torch.Tensor:
-    # Credits: https://discuss.pytorch.org/t/numpy-lexsort-equivalent-in-pytorch/47850/4
+    # Credits: https://discuss.pytorch.org/t/numpy-lexsort-equivalent-in-pytorch/47850/5
 
     if keys.ndim < 2:
         raise ValueError(f"keys must be at least 2 dimensional, but {keys.ndim=}.")
     if len(keys) == 0:
         raise ValueError(f"Must have at least 1 key, but {len(keys)=}.")
 
+    # for-loop is required due to bugs mentioned in credits
     idx = keys[0].argsort(dim=dim, stable=True)
     for k in keys[1:]:
         idx = idx.gather(dim, k.gather(dim, idx).argsort(dim=dim, stable=True))
@@ -37,30 +38,38 @@ def _groupwise_smallest_values_mask(
     device = groups.device
 
     # Combine groups, values, and positional index into a single 2D array
-    pos_index = torch.arange(h)
-    gv_indexed = torch.column_stack((groups.cpu(), values.cpu(), pos_index))
+    pos_index = torch.arange(h, device=device)
+    gv_indexed = torch.column_stack((groups, values, pos_index))
 
-    # Sort BA_indexed based on the first and second columns (indices 0 and 1)
+    # Sort gv_indexed based on the first and second columns (indices 0 and 1)
     gv_indexed_sorted = gv_indexed[_torch_lexsort(gv_indexed[:, :w].T)]
 
-    # Find unique tuples in B and their corresponding indices
-    unique_B, indices = torch.unique_consecutive(
+    # Find unique group tuples and their corresponding indices
+    _, indices = torch.unique_consecutive(
         gv_indexed_sorted[:, :w], return_inverse=True, dim=0
     )
-    # Group the data based on unique tuples in B
-    split_indices = torch.arange(1, h)[(indices[1:] - indices[:-1]) == 1]
-    grouped_data = torch.tensor_split(gv_indexed_sorted, split_indices.tolist())
+    # Group the data based on unique group tuples
+    split_indices = torch.arange(1, h, device=device)[(indices[1:] - indices[:-1]) == 1]
+    grouped_data_tup = torch.tensor_split(gv_indexed_sorted, split_indices.tolist())
 
-    # Find the smallest value in A for each unique tuple in B
-    idx_smallest_values = torch.tensor(
-        [group[torch.argmin(group[:, w]), w + 1] for group in grouped_data],
-    ).to(torch.int64)
+    # Put the group again into one tensor
+    max_group_len = int(torch.tensor([len(group) for group in grouped_data_tup]).max())
+    grouped_data = torch.stack(
+        [
+            F.pad(group, (0, 0, 0, max_group_len - len(group)), value=torch.nan)
+            for group in grouped_data_tup
+        ]
+    )
+
+    # Find the smallest value for each unique group tuple
+    argmins = torch.argmin(grouped_data[:, :, w], dim=1, keepdim=True)
+    idx_smallest_values = grouped_data[..., w + 1].gather(1, argmins).flatten().int()
 
     # Create the filter mask using positional index
-    filter_mask = torch.zeros(h, dtype=torch.bool)
+    filter_mask = torch.zeros(h, dtype=torch.bool, device=device)
     filter_mask[idx_smallest_values] = True
 
-    return filter_mask.to(device)
+    return filter_mask
 
 
 def match_keypoints_2d(
@@ -128,17 +137,15 @@ def match_keypoints_2d(
     idx_kp1 = (idx_kp1 + idx_kp1_rel).clip(0)
     # --> ``idx_kp1`` is the position of the closest keypoint for kp2_uv_projected
 
-    mask_closest = _groupwise_smallest_values_mask(idx_kp1, flat_dists_min)
-
-    # Remove matches with distance greater than threshold
-    mask_closest[mask_closest.clone()] = (
-        flat_dists_min[mask_closest.clone()] < convolution_size * distance_threshold
+    # Find the closest keypoints per given index
+    # while ignoring distances greater than threshold
+    mask_threshold = flat_dists_min < convolution_size * distance_threshold
+    mask_closest = torch.zeros_like(mask_threshold)
+    mask_closest[mask_threshold] = _groupwise_smallest_values_mask(
+        idx_kp1[mask_threshold], flat_dists_min[mask_threshold]
     )
-    # >> SELECT ``kp1_uv``      WITH ``idx_kp1[mask_closest]`` AS INDEX
-    # >> SELECT ``kp2_uv_proj`` WITH ``...`` AS INDEX
 
     kp1_uv_match = kp1_uv[tuple(idx_kp1.T)]
-
     return kp1_uv_match[mask_closest], kp2_uv_match[mask_closest]
 
 
