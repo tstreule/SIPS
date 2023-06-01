@@ -95,7 +95,7 @@ def main(
             (width, height),
             conv_size,
             [COLOR_SONAR_1, COLOR_SONAR_2],
-            (matches_uv[0][0].cpu(), matches_uv[0][1].cpu()),
+            tuple(muv0.cpu() for muv0 in matches_uv[0]),
             COLOR_HIGHLIGHT,
         )
         plt.show()
@@ -110,8 +110,8 @@ def main(
             batch_match_keypoints_2d(kp1_uv, kp2_uv_proj, conv_size, distance_threshold)
             times.append(time() - start)
             # fmt: on
-        print("Mean time:", torch.tensor(times).mean())
-        print("Mean time per batch:", torch.tensor(times).mean() / batch_size)
+        print("Mean time per batch:", torch.tensor(times).mean())
+        print("Mean time (single): ", torch.tensor(times).mean() / batch_size)
 
     return None
 
