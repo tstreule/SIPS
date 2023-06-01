@@ -3,8 +3,10 @@ Example script to time and visualize arc projections and matching of sonar image
 
 """
 from time import time
+from typing import Optional
 
 import torch
+import torch.backends.mps
 import typer
 from matplotlib import pyplot as plt
 
@@ -22,7 +24,24 @@ from sips.utils.point_projection import batch_uv_to_xyz, batch_warp_image
 app = typer.Typer()
 
 
-def make_uv_grid(
+def _set_seed(seed: int | None) -> None:
+    """
+    Set seeds for cpu and cuda/mps if available.
+
+    """
+    if seed is None:
+        return
+
+    torch.random.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        from torch import mps
+
+        mps.manual_seed(seed)
+
+
+def _make_uv_grid(
     width: int, height: int, conv_size: int, batch_size: int = 1, *, add_noise=True
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
@@ -50,14 +69,20 @@ def main(
     distance_threshold: float = 0.5,
     plot: bool = True,
     timeit: bool = True,
+    distance_metric: str = "p2l",
+    device: str = "cpu",
+    seed: Optional[int] = 120,
 ):
+    _set_seed(seed)
 
     # Set data
     batch = get_random_batch(batch_size=batch_size)
     _, _, width, height = batch.image1.shape
 
     # Create convolutional grid
-    kp1_uv, kp2_uv = make_uv_grid(width, height, conv_size, batch_size, add_noise=True)
+    kp1_uv, kp2_uv = _make_uv_grid(width, height, conv_size, batch_size, add_noise=True)
+    kp1_uv = kp1_uv.to(device)
+    kp2_uv = kp2_uv.to(device)
 
     # Get arc position
     kp1_xyz = batch_uv_to_xyz(kp1_uv, batch.params1, batch.pose1, (width, height))
@@ -71,7 +96,7 @@ def main(
 
     # Find matching keypoints that are close
     matches_uv = batch_match_keypoints_2d(
-        kp1_uv, kp2_uv_proj, conv_size, distance_threshold
+        kp1_uv, kp2_uv_proj, conv_size, distance_threshold, distance=distance_metric  # type: ignore[arg-type]
     )
 
     # Optional: Plot point projection (select first in batch)
@@ -107,7 +132,7 @@ def main(
             # fmt: off
             start = time()
             kp2_uv_proj = batch_warp_image(kp2_uv, batch.params2, batch.pose2, batch.params1, batch.pose1, (width, height))
-            batch_match_keypoints_2d(kp1_uv, kp2_uv_proj, conv_size, distance_threshold)
+            batch_match_keypoints_2d(kp1_uv, kp2_uv_proj, conv_size, distance_threshold, distance=distance_metric)  # type: ignore[arg-type]
             times.append(time() - start)
             # fmt: on
         print("Mean time per batch:", torch.tensor(times).mean())
