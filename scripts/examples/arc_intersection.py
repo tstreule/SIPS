@@ -11,7 +11,7 @@ import typer
 from matplotlib import pyplot as plt
 
 from scripts.examples._sonar_data import get_random_batch
-from sips.utils.keypoint_matching import batch_match_keypoints_2d
+from sips.utils.keypoint_matching import match_keypoints_2d_batch
 from sips.utils.plotting import (
     COLOR_HIGHLIGHT,
     COLOR_SONAR_1,
@@ -19,7 +19,7 @@ from sips.utils.plotting import (
     plot_arcs_2d,
     plot_arcs_3d,
 )
-from sips.utils.point_projection import batch_uv_to_xyz, batch_warp_image
+from sips.utils.point_projection import uv_to_xyz_batch, warp_image_batch
 
 app = typer.Typer()
 
@@ -69,7 +69,7 @@ def main(
     distance_threshold: float = 0.5,
     plot: bool = True,
     timeit: bool = True,
-    distance_metric: str = "p2l",
+    metric: str = "p2l",
     device: str = "cpu",
     seed: Optional[int] = 120,
 ):
@@ -85,42 +85,44 @@ def main(
     kp2_uv = kp2_uv.to(device)
 
     # Get arc position
-    kp1_xyz = batch_uv_to_xyz(kp1_uv, batch.params1, batch.pose1, (width, height))
-    kp2_xyz = batch_uv_to_xyz(kp2_uv, batch.params2, batch.pose2, (width, height))
+    kp1_xyz = uv_to_xyz_batch(kp1_uv, batch.params1, batch.pose1, (width, height))
+    kp2_xyz = uv_to_xyz_batch(kp2_uv, batch.params2, batch.pose2, (width, height))
 
     # Point projection to other camera
     # kp2_uv_proj = batch_xyz_to_uv(kp2_xyz, batch.params1, batch.pose1, (width, height))
-    kp2_uv_proj = batch_warp_image(
+    kp2_uv_proj = warp_image_batch(
         kp2_uv, batch.params2, batch.pose2, batch.params1, batch.pose1, (width, height)
     )
 
     # Find matching keypoints that are close
-    matches_uv = batch_match_keypoints_2d(
-        kp1_uv, kp2_uv_proj, conv_size, distance_threshold, distance=distance_metric  # type: ignore[arg-type]
+    kp1_match, kp2_match, _, _, mask = match_keypoints_2d_batch(
+        kp1_uv, kp2_uv_proj, conv_size, distance_threshold, distance=metric  # type: ignore[arg-type]
     )
 
     # Optional: Plot point projection (select first in batch)
     if plot:
-        _, D, _, W, H = kp1_xyz.shape
-        kp1_xyz_0 = kp1_xyz[0].view(D, 3, W * H).permute(2, 0, 1)
-        kp2_xyz_0 = kp2_xyz[0].view(D, 3, W * H).permute(2, 0, 1)
-        kp1_uv_0 = kp1_uv[0].view(2, W * H).permute(1, 0)
-        kp2_uv_proj_0 = kp2_uv_proj[0].view(D, 2, W * H).permute(2, 0, 1)
+        b = 0  # select batch index (b in B)
 
-        nan_mask = torch.isnan(kp2_uv_proj_0).any(-1)
-        kp2_xyz_filtered = kp2_xyz_0.clone()
+        _, D, _, W, H = kp1_xyz.shape
+        kp1_xyz_b = kp1_xyz[b].view(D, 3, W * H).permute(2, 0, 1)
+        kp2_xyz_b = kp2_xyz[b].view(D, 3, W * H).permute(2, 0, 1)
+        kp1_uv_b = kp1_uv[b].view(2, W * H).permute(1, 0)
+        kp2_uv_proj_b = kp2_uv_proj[b].view(D, 2, W * H).permute(2, 0, 1)
+
+        nan_mask = torch.isnan(kp2_uv_proj_b).any(-1)
+        kp2_xyz_filtered = kp2_xyz_b.clone()
         kp2_xyz_filtered[nan_mask] = torch.nan
         plot_arcs_3d(
-            [kp1_xyz_0[::12], kp2_xyz_0[::12], kp2_xyz_filtered[::12]],
-            [batch.pose1[0].position, batch.pose2[0].position, None],
+            [kp1_xyz_b[::12], kp2_xyz_b[::12], kp2_xyz_filtered[::12]],
+            [batch.pose1[b].position, batch.pose2[b].position, None],
             colors=[COLOR_SONAR_1, COLOR_SONAR_2, COLOR_HIGHLIGHT],
         )
         plot_arcs_2d(
-            [kp1_uv_0, kp2_uv_proj_0],
+            [kp1_uv_b, kp2_uv_proj_b],
             (width, height),
             conv_size,
             [COLOR_SONAR_1, COLOR_SONAR_2],
-            tuple(muv0.cpu() for muv0 in matches_uv[0]),
+            (kp1_match[b][mask[b]].cpu(), kp2_match[b][mask[b]]),
             COLOR_HIGHLIGHT,
         )
         plt.show()
@@ -131,8 +133,8 @@ def main(
         for _ in range(100):
             # fmt: off
             start = time()
-            kp2_uv_proj = batch_warp_image(kp2_uv, batch.params2, batch.pose2, batch.params1, batch.pose1, (width, height))
-            batch_match_keypoints_2d(kp1_uv, kp2_uv_proj, conv_size, distance_threshold, distance=distance_metric)  # type: ignore[arg-type]
+            kp2_uv_proj = warp_image_batch(kp2_uv, batch.params2, batch.pose2, batch.params1, batch.pose1, (width, height))
+            match_keypoints_2d_batch(kp1_uv, kp2_uv_proj, conv_size, distance_threshold, distance=metric)  # type: ignore[arg-type]
             times.append(time() - start)
             # fmt: on
         print("Mean time per batch:", torch.tensor(times).mean())

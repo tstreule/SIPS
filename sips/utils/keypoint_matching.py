@@ -3,7 +3,7 @@ from typing import Iterable, Literal
 import torch
 import torch.nn.functional as F
 
-__all__ = ["match_keypoints_2d", "batch_match_keypoints_2d"]
+__all__ = ["match_keypoints_2d", "match_keypoints_2d_batch"]
 
 
 # ==============================================================================
@@ -167,7 +167,7 @@ def _point2linesegment_distance(
 # Keypoint matching
 
 
-def _batch_point2point_match(
+def _point2point_match_batch(
     kp1_uv_strided: torch.Tensor, kp2_uv_proj: torch.Tensor, convolution_size: int
 ) -> tuple[torch.Tensor, torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
     """
@@ -180,6 +180,7 @@ def _batch_point2point_match(
     # Check input
     B, H, W, C, WS, WS = kp1_uv_strided.shape
     B, H__W, D, C = kp2_uv_proj.shape
+    assert C == 2 and D >= 1
     assert H__W == H * W
     device = kp1_uv_strided.device
     assert kp1_uv_strided.device == kp2_uv_proj.device
@@ -221,21 +222,24 @@ def _batch_point2point_match(
     # Reconstruct the index in kp1 to match the sequence of kp2
     #  - ``idx_kp1`` is the position of the closest keypoint for kp2_uv_projected
     #  - clipping due to bad keypoints that didn't get projected onto the other image
-    idx_kp1 = torch.nan_to_num(kp2_uv_match / convolution_size).int()
-    idx_kp1_rel = torch.stack(_unravel_index_2d(col, (WS, WS)), 2) - 1
-    idx_kp1 = idx_kp1 + idx_kp1_rel
+    idx_kp1 = torch.nan_to_num(kp2_uv_match // convolution_size).int()
+    idx_kp1 += torch.stack(_unravel_index_2d(col, (WS, WS)), 2) - 1  # relative index
     idx_kp1[..., 0] = idx_kp1[..., 0].clip(0, H - 1)
     idx_kp1[..., 1] = idx_kp1[..., 1].clip(0, W - 1)
+    # Add batch column
+    batch_idx = torch.arange(B, device=device)[:, None]
+    batch_idx = batch_idx.broadcast_to(idx_kp1.shape[:2])[..., None]
+    batch_idx_kp1 = torch.cat([batch_idx, idx_kp1], -1)
 
     # Select kp1 matches (same order as kp2)
     PAD = (WS - 1) // 2
-    kp1_uv_flat = kp1_uv_strided[..., PAD, PAD].flatten(0, 1)
-    kp1_uv_match = kp1_uv_flat[tuple(idx_kp1.flatten(0, 1).T)].unflatten(0, (B, H__W))
+    kp1_uv = kp1_uv_strided[..., PAD, PAD]
+    kp1_uv_match = kp1_uv[tuple(batch_idx_kp1.flatten(0, 1).T)].unflatten(0, (B, H__W))
 
-    return flat_dists_min, idx_kp1, (kp1_uv_match, kp2_uv_match)
+    return flat_dists_min, batch_idx_kp1, (kp1_uv_match, kp2_uv_match)
 
 
-def _batch_point2linesegment_match(
+def _point2linesegment_match_batch(
     kp1_uv_strided: torch.Tensor, kp2_uv_proj: torch.Tensor, convolution_size: int
 ) -> tuple[torch.Tensor, torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
     """
@@ -249,11 +253,16 @@ def _batch_point2linesegment_match(
     B, H, W, C, WS, WS = kp1_uv_strided.shape
     B, H__W, D, C = kp2_uv_proj.shape
     assert H__W == H * W
+    assert C == 2 and D >= 1
     device = kp1_uv_strided.device
     assert kp1_uv_strided.device == kp2_uv_proj.device
 
     # Mask out points that don't project onto the other image
-    kp2_mask = torch.isfinite(kp2_uv_proj).any(-1).any(-1)  # (B,H*W)
+    # or that don't make up a line (only one elevation was projected).
+    # In the latter case, let ``_point2point_distance()`` handle it.
+    mask_finite = torch.isfinite(kp2_uv_proj).any(-1).sum(-1)
+    kp2_mask = mask_finite > 1  # (B,H*W)
+    kp2_mask_p2p = mask_finite == 1  # (B,H*W)
     # Rounding down gives the index of the other images point
     idx = torch.nan_to_num(kp2_uv_proj[kp2_mask] / convolution_size).int()  # (-1,D,2)
     idx[..., 0] = idx[..., 0].clip(0, H - 1)
@@ -271,13 +280,13 @@ def _batch_point2linesegment_match(
         .squeeze(0)  # (1,...) -> (...)
         .flatten(-2, -1)  # (...,WS,WS) -> (...,WS*WS)
     )
-    masked_distances = _point2linesegment_distance(
+    masked_distances = _point2linesegment_distance(  # (N,D-1,D,WS*WS)
         line_points[:, :-1, None, :, None],
         line_points[:, 1:, None, :, None],
         points[:, None],
         dim=3,
     )
-    distances = torch.full(
+    distances = torch.full(  # (B,H*W,D-1,D,WS*WS)
         (*kp2_mask.shape, *masked_distances.shape[1:]), torch.inf, device=device
     )
     distances[kp2_mask] = masked_distances.nan_to_num(torch.inf)
@@ -295,24 +304,36 @@ def _batch_point2linesegment_match(
     # Reconstruct the index in kp1 to match the sequence of kp2
     #  - ``idx_kp1`` is the position of the closest keypoint for kp2_uv_projected
     #  - clipping due to bad keypoints that didn't get projected onto the other image
-    kp2_uv_to_round = kp2_uv_proj.take_along_dim(row[..., None, None], -2).squeeze(-2)
-    idx_kp1 = torch.nan_to_num(kp2_uv_to_round / convolution_size).int()
-    idx_kp1_rel = torch.stack(_unravel_index_2d(col, (WS, WS)), 2) - 1
-    idx_kp1 = idx_kp1 + idx_kp1_rel
+    kp2_uv_to_round = kp2_uv_proj.take_along_dim(row[..., None, None], 2).squeeze(2)
+    idx_kp1 = torch.nan_to_num(kp2_uv_to_round // convolution_size).int()
+    idx_kp1 += torch.stack(_unravel_index_2d(col, (WS, WS)), 2) - 1  # relative index
     idx_kp1[..., 0] = idx_kp1[..., 0].clip(0, H - 1)
     idx_kp1[..., 1] = idx_kp1[..., 1].clip(0, W - 1)
+    # Add batch column
+    batch_idx = torch.arange(B, device=device)[:, None]
+    batch_idx = batch_idx.broadcast_to(idx_kp1.shape[:2])[..., None]
+    batch_idx_kp1 = torch.cat([batch_idx, idx_kp1], -1)
 
     # Select kp1 matches (same order as kp2)
     PAD = (WS - 1) // 2
-    kp1_uv_flat = kp1_uv_strided[..., PAD, PAD].flatten(0, 1)
-    kp1_uv_match = kp1_uv_flat[tuple(idx_kp1.flatten(0, 1).T)].unflatten(0, (B, H__W))
+    kp1_uv = kp1_uv_strided[..., PAD, PAD]
+    kp1_uv_match = kp1_uv[tuple(batch_idx_kp1.flatten(0, 1).T)].unflatten(0, (B, H__W))
 
     # Select kp2 line points and calculate the match on the line segment
     kp2_uv_p1 = kp2_uv_proj.take_along_dim(line[..., None, None], -2).squeeze(-2)
     kp2_uv_p2 = kp2_uv_proj.take_along_dim(line[..., None, None] + 1, -2).squeeze(-2)
     kp2_uv_match = _project_point_on_linesegment(kp2_uv_p1, kp2_uv_p2, kp1_uv_match)
 
-    return flat_dists_min, idx_kp1, (kp1_uv_match, kp2_uv_match)
+    # Use point2point distance where only one elevation got projected
+    a, b, (c, d) = _point2point_match_batch(
+        kp1_uv_strided, kp2_uv_proj, convolution_size
+    )
+    flat_dists_min[kp2_mask_p2p] = a[kp2_mask_p2p]
+    batch_idx_kp1[kp2_mask_p2p] = b[kp2_mask_p2p]
+    kp1_uv_match[kp2_mask_p2p] = c[kp2_mask_p2p]
+    kp2_uv_match[kp2_mask_p2p] = d[kp2_mask_p2p]
+
+    return flat_dists_min, batch_idx_kp1, (kp1_uv_match, kp2_uv_match)
 
 
 def match_keypoints_2d(
@@ -320,9 +341,10 @@ def match_keypoints_2d(
     kp2_uv_proj: torch.Tensor,
     convolution_size: int,
     distance_threshold: float = 0.5,
+    allow_multi_match: bool = True,
     window_size: int = 3,
     distance: Literal["p2p", "p2l"] = "p2l",
-) -> tuple[torch.Tensor, ...]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Matches keypoints ``kp1_uv`` with projected keypoints ``kp2_uv_proj``.
 
@@ -335,13 +357,17 @@ def match_keypoints_2d(
     Parameters
     ----------
     kp1_uv : torch.Tensor
-        Original keypoints (see Notes!). Shape: (C, H, W)
+        Original keypoints (see Notes!). Shape: (2, H, W)
     kp2_uv_proj : torch.Tensor
-        Projected keypoints. Shape: (D, C, H, W)
+        Projected keypoints. Shape: (D, 2, H, W)
     convolution_size : int
         Size of the convolution. It is used to find the keypoint indices (see Notes!).
     distance_threshold : float, optional
         Relative threshold for keypoints to be considered a "match", by default 0.5
+    allow_multi_match : bool, optional
+        If False, will only accept the closest match per kp1 keypoint.
+        If True, multiple kp2 keypoints may match with a single kp1 keypoint.
+        Default: True
     window_size : int, optional
         Window size for padding around neighboring kp1-keypoints, by default 3
     distance : Literal["p2p", "p2l"], optional
@@ -351,27 +377,46 @@ def match_keypoints_2d(
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor]
-        Matching keypoint tuple from kp1 and kp2.
+    kp1_matches : torch.Tensor
+        Matching keypoints from kp1 (not yet masked). Shape: (H*W, 2)
+    kp2_matches : torch.Tensor
+        Matching keypoints from kp1 (not yet masked). Shape: (H*W, 2)
+    min_distances : torch.Tensor
+        Distances for keypoint matches (not yet masked). Shape: (H*W,)
+    argmin_distances : torch.Tensor
+        Indices for ``min_distances`` (not yet masked). Shape: (H*W, 2)
+    mask : torch.Tensor
+        Threshold and ensure-single-match mask. Shape: (H*W,)
+
     """
-    return batch_match_keypoints_2d(
-        kp1_uv.squeeze(0),
-        kp2_uv_proj.squeeze(0),
-        convolution_size,
-        distance_threshold,
-        window_size,
-        distance,
-    )[0]
+    batched_out = match_keypoints_2d_batch(
+        kp1_uv=kp1_uv.unsqueeze(0),
+        kp2_uv_proj=kp2_uv_proj.unsqueeze(0),
+        convolution_size=convolution_size,
+        distance_threshold=distance_threshold,
+        allow_multi_match=allow_multi_match,
+        window_size=window_size,
+        distance=distance,
+    )
+    kp1_matches, kp2_matches, min_distances, argmin_distances, mask = batched_out
+    return (
+        kp1_matches.squeeze(0),
+        kp2_matches.squeeze(0),
+        min_distances.squeeze(0),
+        argmin_distances.squeeze(0)[:, (1, 2)],  # don't need batch index
+        mask.squeeze(0),
+    )
 
 
-def batch_match_keypoints_2d(
+def match_keypoints_2d_batch(
     kp1_uv: torch.Tensor,
     kp2_uv_proj: torch.Tensor,
     convolution_size: int,
     distance_threshold: float = 0.5,
+    allow_multi_match: bool = True,
     window_size: int = 3,
     distance: Literal["p2p", "p2l"] = "p2l",
-) -> list[tuple[torch.Tensor, ...]]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Matches keypoints ``kp1_uv`` with projected keypoints ``kp2_uv_proj``, either by
     Point-to-LineSegment (default) or Point-to-Point distance.
@@ -385,31 +430,44 @@ def batch_match_keypoints_2d(
     Parameters
     ----------
     kp1_uv : torch.Tensor
-        Original keypoints (see Notes!). Shape: (B, C, H, W)
+        Original keypoints (see Notes!). Shape: (B, 2, H, W)
     kp2_uv_proj : torch.Tensor
-        Projected keypoints. Shape: (B, D, C, H, W)
+        Projected keypoints. Shape: (B, D, 2, H, W)
     convolution_size : int
         Size of the convolution. It is used to find the keypoint indices (see Notes!).
     distance_threshold : float, optional
         Relative threshold for keypoints to be considered a "match", by default 0.5
+    allow_multi_match : bool, optional
+        If False, will only accept the closest match per kp1 keypoint.
+        If True, multiple kp2 keypoints may match with a single kp1 keypoint.
+        Default: True
     window_size : int, optional
         Window size for padding around neighboring kp1-keypoints, by default 3
     distance : Literal["p2p", "p2l"], optional
         Distance function to use, by default "p2l"
         If "p2p", uses Point-to-Point distance metric (less precise, slightly faster).
         If "p2l", uses Point-to-LineSegment distance metric (more precise, default).
+    return_distances : bool, optional
+        If True, returns the calculated distances instead (for training), by default False
 
     Returns
     -------
-    list[tuple[torch.Tensor, torch.Tensor]]
-        For every batch a (Tensor, Tensor) matching keypoint tuple from kp1 and kp2.
+    kp1_matches : torch.Tensor
+        Matching keypoints from kp1 (not yet masked). Shape: (B, H*W, 2)
+    kp2_matches : torch.Tensor
+        Matching keypoints from kp1 (not yet masked). Shape: (B, H*W, 2)
+    min_distances : torch.Tensor
+        Distances for keypoint matches (not yet masked). Shape: (B, H*W)
+    argmin_distances : torch.Tensor
+        Indices for ``min_distances`` (not yet masked). Shape: (B, H*W, 3)
+    mask : torch.Tensor
+        Threshold and ensure-single-match mask. Shape: (B, H*W)
 
     """
     # Check input
     B, C, H, W = kp1_uv.shape
     B, D, C, H, W = kp2_uv_proj.shape
     assert C == 2
-    device = kp1_uv.device
     assert kp1_uv.device == kp2_uv_proj.device
     # Permute dimensions for nicer data handling
     kp1_uv = kp1_uv.permute(0, 2, 3, 1)  # (B,H,W,2)
@@ -427,27 +485,30 @@ def batch_match_keypoints_2d(
     kp1_uv_strided = kp1_uv_padded.unfold(1, WS, 1).unfold(2, WS, 1)
     # -> (H, W, 2, WS, WS)
 
+    # Calculate distances
     if distance == "p2p":
-        min_distances, idx_kp1, kp_matches = _batch_point2point_match(
+        min_distances, argmin_distances, kp_matches = _point2point_match_batch(
             kp1_uv_strided, kp2_uv_proj, convolution_size
         )
     elif distance == "p2l":
-        min_distances, idx_kp1, kp_matches = _batch_point2linesegment_match(
+        min_distances, argmin_distances, kp_matches = _point2linesegment_match_batch(
             kp1_uv_strided, kp2_uv_proj, convolution_size
         )
     else:
         raise ValueError(f"Invalid {distance=}")
+    kp1_matches, kp2_matches = kp_matches
 
-    # Find the closest keypoints per given index
-    # while ignoring distances greater than threshold
-    mask_threshold = min_distances < convolution_size * distance_threshold
-    mask_closest = torch.zeros_like(mask_threshold)
-    batch_idx = torch.arange(B, device=device)[:, None].broadcast_to(idx_kp1.shape[:2])[
-        ..., None
-    ]
-    batch_indexed_idx_kp1 = torch.cat([batch_idx, idx_kp1], -1)
-    mask_closest[mask_threshold] = _groupwise_smallest_values_mask(
-        batch_indexed_idx_kp1[mask_threshold], min_distances[mask_threshold]
-    )
+    # Ignore distances greater than threshold
+    mask_epsilon = min_distances < convolution_size * distance_threshold
+    # Allow multiple matches per kp1 keypoint
+    if allow_multi_match:
+        mask = mask_epsilon
+    # Only allow the closest kp1 keypoint matches
+    else:
+        mask = mask_epsilon.clone()
+        mask[mask_epsilon] = _groupwise_smallest_values_mask(
+            argmin_distances[mask_epsilon], min_distances[mask_epsilon]
+        )
 
-    return [tuple(match[b, mask_closest[b]] for match in kp_matches) for b in range(B)]
+    # Return mask separately since number of matches may differ among images (b in B)
+    return kp1_matches, kp2_matches, min_distances, argmin_distances, mask
