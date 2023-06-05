@@ -21,7 +21,7 @@
 >>>>>>> update settings
   "isort.args": ["--profile", "black"],
   "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.defaultFormatter": "ms-python.python",
     "editor.codeActionsOnSave": {
       "source.organizeImports": true
     }
@@ -34,5 +34,15 @@
   "[jsonc]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnType": true
+  },
+  // Set the PYTHONPATH to the root of workspace directory
+  "terminal.integrated.env.osx": {
+    "PYTHONPATH": "${workspaceFolder}"  
+  },
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}" 
+  },
+  "terminal.integrated.env.windows": {
+    "PYTHONPATH": "${workspaceFolder}"
   }
 }
