@@ -24,7 +24,7 @@ def plot_arcs_2d(
     image_resolution: tuple[int, int],
     convolution_size: int,
     colors: str | list[str] | None = None,
-    keypoint_pairs: tuple[npt.ArrayLike, npt.ArrayLike] | None = None,
+    keypoint_pairs: tuple[npt.ArrayLike, ...] | None = None,
     keypoint_pairs_color: str | None = None,
 ) -> plt.Axes:
     """
@@ -40,7 +40,7 @@ def plot_arcs_2d(
         Distance of visual guidelines / xticks and yticks grid.
     colors : str | list[str] | None, optional
         Colors of the keypoints, by default None
-    keypoint_pairs : tuple[npt.ArrayLike, npt.ArrayLike] | None, optional
+    keypoint_pairs : tuple[npt.ArrayLike, ...] | None, optional
         Keypoint pairs that will be connected by a line, by default None
     keypoint_pairs_color : str | None, optional
         Color of the connecting line for keypoint pairs, by default None
@@ -86,10 +86,11 @@ def plot_arcs_2d(
 
     # Plot lines
     if keypoint_pairs is not None:
-        lines = np.concatenate(keypoint_pairs, axis=-1).reshape(-1, 4)
+        lines = np.concatenate(keypoint_pairs, axis=-1)
+        lines = lines.reshape(-1, 2 * len(keypoint_pairs))
         for points in lines:
-            points = points.reshape(2, 2)
-            ax.plot(points[:, 0], points[:, 1], keypoint_pairs_color)
+            points = points.reshape(len(keypoint_pairs), 2)
+            ax.plot(*points.T, keypoint_pairs_color)
 
     fig.tight_layout()
     return ax
