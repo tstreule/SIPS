@@ -11,12 +11,12 @@ from scipy.spatial.transform import Rotation as R
 from sips.data import CameraParams, CameraPose
 
 __all__ = [
-    "batch_uv_to_xyz",
-    "batch_xyz_to_uv",
-    "batch_warp_image",
     "uv_to_xyz",
+    "uv_to_xyz_batch",
     "xyz_to_uv",
+    "xyz_to_uv_batch",
     "warp_image",
+    "warp_image_batch",
 ]
 
 # ==============================================================================
@@ -40,7 +40,7 @@ def _get_pixel_delta(
 # Batched coordinate transforms
 
 
-def batch_uv_to_xyz(
+def uv_to_xyz_batch(
     points_uv: torch.Tensor,
     params: list[CameraParams],
     pose: list[CameraPose],
@@ -92,7 +92,7 @@ def batch_uv_to_xyz(
     # Find horizontal rotations
     theta = azimuth[:, None] / 2 - u * delta_t
     theta_rotvec = F.pad(theta[..., None], (2, 0), value=0)  # add two 0-cols from left
-    theta_rot_flat = R.from_rotvec(theta_rotvec.flatten(0, 1).cpu(), degrees=degrees).as_matrix()  # type: ignore
+    theta_rot_flat = R.from_rotvec(theta_rotvec.flatten(0, 1).detach().cpu(), degrees=degrees).as_matrix()  # type: ignore
     theta_rot = torch.from_numpy(theta_rot_flat).view(B, H * W, 3, 3).to(uv)
     # Find vertical rotations
     phi = (
@@ -120,7 +120,7 @@ def batch_uv_to_xyz(
     return points_xyz.permute(0, 2, 3, 1).view(B, n_elevations, 3, H, W)
 
 
-def _batch_xyz_to_rtp(
+def _xyz_to_rtp_batch(
     points_xyz: torch.Tensor,
     camera_pose: list[CameraPose] | None = None,
     degrees: bool = False,
@@ -173,7 +173,7 @@ def _batch_xyz_to_rtp(
     return torch.stack([r, theta, phi], dim=1)
 
 
-def batch_xyz_to_uv(
+def xyz_to_uv_batch(
     points_xyz: torch.Tensor,
     params: list[CameraParams],
     pose: list[CameraPose],
@@ -202,7 +202,7 @@ def batch_xyz_to_uv(
     if points_xyz.ndim == 5:
         B, N_ELEVATIONS, C, H, W = points_xyz.shape
         points_xyz_flat = points_xyz.permute(0, 2, 3, 4, 1).flatten(-2, -1)
-        output = batch_xyz_to_uv(points_xyz_flat, params, pose, image_resolution)
+        output = xyz_to_uv_batch(points_xyz_flat, params, pose, image_resolution)
         return output.unflatten(-1, (W, N_ELEVATIONS)).permute(0, 4, 1, 2, 3)
 
     # Input check
@@ -215,7 +215,7 @@ def batch_xyz_to_uv(
 
     # Flatten and convert to spherical coordinates
     points_xyz_flat = points_xyz.view(B, 3, H * W)
-    r, theta, phi = _batch_xyz_to_rtp(points_xyz_flat, pose, degrees).permute(1, 0, 2)
+    r, theta, phi = _xyz_to_rtp_batch(points_xyz_flat, pose, degrees).permute(1, 0, 2)
 
     # Find step size in u (theta) and v (radius) direction
     deltas = torch.tensor([_get_pixel_delta(image_resolution, p) for p in params])
@@ -249,7 +249,7 @@ def batch_xyz_to_uv(
     return points_uv.permute(1, 0, 2).view(B, 2, H, W)
 
 
-def batch_warp_image(
+def warp_image_batch(
     points_uv: torch.Tensor,
     source_params: list[CameraParams],
     source_pose: list[CameraPose],
@@ -259,7 +259,7 @@ def batch_warp_image(
     n_elevations: int = 5,
 ) -> torch.Tensor:
     """
-    Warp a sonar image into another image space (arc projection).
+    Warp a sonar image batch into another image space (arc projection).
 
     Parameters
     ----------
@@ -284,10 +284,10 @@ def batch_warp_image(
         Arc projected image points. Shape: (B,n_elevations,2,H,W)
 
     """
-    points_xyz = batch_uv_to_xyz(
+    points_xyz = uv_to_xyz_batch(
         points_uv, source_params, source_pose, image_resolution, n_elevations
     )
-    points_uv_proj = batch_xyz_to_uv(
+    points_uv_proj = xyz_to_uv_batch(
         points_xyz, target_params, target_pose, image_resolution
     )
     return points_uv_proj
@@ -309,7 +309,7 @@ def uv_to_xyz(
 
     """
     _, _, _ = points_uv.shape  # checks dim
-    batched_out = batch_uv_to_xyz(
+    batched_out = uv_to_xyz_batch(
         points_uv.unsqueeze(0), [params], [pose], image_resolution, n_elevations
     )
     return batched_out.squeeze(0)
@@ -326,7 +326,7 @@ def _xyz_to_rtp(
     """
     _, _, _ = points_xyz.shape  # checks dim
     camera_pose_ = [camera_pose] if camera_pose else None
-    batched_out = _batch_xyz_to_rtp(points_xyz.unsqueeze(0), camera_pose_, degrees)
+    batched_out = _xyz_to_rtp_batch(points_xyz.unsqueeze(0), camera_pose_, degrees)
     return batched_out.squeeze(0)
 
 
@@ -340,7 +340,7 @@ def xyz_to_uv(
     Converts points from Euclidean (xyz) space to sonar image (uv) space.
 
     """
-    batched_out = batch_xyz_to_uv(
+    batched_out = xyz_to_uv_batch(
         points_xyz.unsqueeze(0), [params], [pose], image_resolution
     )
     return batched_out.squeeze(0)
