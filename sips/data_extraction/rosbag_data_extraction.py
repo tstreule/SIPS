@@ -313,7 +313,7 @@ class DataExtraction:
             self.poses[-1]["timestamp"] >= sonar_stamps_matched[-1]  # type: ignore
         ), f"{30 * '='}\nLast sonar datapoint after last pose datapoint\n{30 * '='}"
 
-        # Remove the sonar images that were recordedafter the last pose
+        # Remove the sonar images that were recorded after the last pose
         # datapoint
         for unmatch in sonar_stamps_unmatched:
             self.sonar_images.pop(unmatch)
@@ -410,21 +410,6 @@ def make_pose_interpolator(poses: list[dict[str, int | dict[str, float]]]) -> in
     )
 
 
-def make_twist_interpolator(
-    twists: list[dict[str, int | dict[str, float]]]
-) -> interp1d:
-    timestamps = [twist["timestamp"] for twist in twists]
-    # Alternatively you can write the following when you want the timestamps in seconds
-    # timestamps = [twist["timestamp"] * 1e-9 for twist in twists]
-    linear = np.array(
-        [[twist["linear"][key] for key in "xyz"] for twist in twists]  # type: ignore
-    ).T
-    angular = np.array(
-        [[twist["angular"][key] for key in "xyz"] for twist in twists]  # type: ignore
-    ).T
-    return interp1d(timestamps, np.concatenate([linear, angular], axis=0))
-
-
 # ==============================================================================
 # Match interpolated pose and twist data with sonar timestamps
 
@@ -451,28 +436,6 @@ def match_pose_data(sonar_stamps, poses):
         }
         pose_data_matched.append(pose)
     return pose_data_matched
-
-
-def match_twist_data(sonar_stamps, twists):
-    twist_interp = make_twist_interpolator(twists)
-    twist_data_matched = []
-    for sonar_stamp in sonar_stamps:
-        interpolated_twist = twist_interp(sonar_stamp)
-        twist: dict[str, int | dict[str, float]] = {
-            "timestamp": sonar_stamp,  # type: ignore
-            "linear": {
-                "x": interpolated_twist[0],
-                "y": interpolated_twist[1],
-                "z": interpolated_twist[2],
-            },
-            "angular": {
-                "x": interpolated_twist[3],
-                "y": interpolated_twist[4],
-                "z": interpolated_twist[5],
-            },
-        }
-        twist_data_matched.append(twist)
-    return twist_data_matched
 
 
 # ==============================================================================
