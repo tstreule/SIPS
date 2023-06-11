@@ -153,15 +153,20 @@ class ImageOverlap:
             with open(self.source_dir / "info.json", "r") as f:
                 self.info = json.load(f)
         except IOError:
-            "info.json file missing, abort"
+            print("info.json file missing, abort")
+            return
         self.camera_params = CameraParams(
             min_range=self.info["sonar_config_params"]["min_range"],  # type: ignore
             max_range=self.info["sonar_config_params"]["max_range"],  # type: ignore
             azimuth=self.info["sonar_config_params"]["horizontal_fov"],  # type: ignore
             elevation=self.info["sonar_config_params"]["vertical_fov"],  # type: ignore
         )
-        with open(self.source_dir / "pose_data.json", "r") as f:
-            self.poses = json.load(f)
+        try:
+            with open(self.source_dir / "pose_data.json", "r") as f:
+                self.poses = json.load(f)
+        except IOError:
+            print("pose_data.json file missing, abort")
+            return
 
         for im_path in glob.glob(f"{str(self.source_dir)}/images/*"):
             im_stamp = int(im_path.split("_")[1].split(".")[0])
@@ -176,6 +181,9 @@ class ImageOverlap:
                     stamp=im_stamp,
                 )
             )
+        if len(self.sonar_datum) < 2:
+            print("not enough sonar data found, abort")
+            return
         self.read_data = True
         return
 
