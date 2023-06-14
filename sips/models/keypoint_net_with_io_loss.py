@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch import optim
 
 from sips.data import SonarBatch
+from sips.evaluation import evaluate_keypoint_net
 from sips.networks import InlierNet, KeypointNet, KeypointResnet
 from sips.utils.image import normalize_2d_coordinate, to_color_normalized
 from sips.utils.keypoint_matching import match_keypoints_2d_batch
@@ -432,9 +433,18 @@ class KeypointNetwithIOLoss(pl.LightningModule):
     def validation_step(self, batch: SonarBatch, batch_idx: int):
         target_out, source_out = self(batch)
         loss, recall = self._get_loss_recall(batch, target_out, source_out)
+        rep, loc, c1, c3, c5, mscore = evaluate_keypoint_net(
+            batch, target_out, source_out, self.keypoint_net.cell, self.top_k2
+        )
 
         self.log("val_loss", loss, batch_size=batch.batch_size)
         self.log("val_recall", recall, batch_size=batch.batch_size)
+        self.log("val_repeatability", rep, batch_size=batch.batch_size)
+        self.log("val_localization_error", loc, batch_size=batch.batch_size)
+        self.log("val_correctness_d1", c1, batch_size=batch.batch_size)
+        self.log("val_correctness_d3", c3, batch_size=batch.batch_size)
+        self.log("val_correctness_d5", c5, batch_size=batch.batch_size)
+        self.log("val_mscore", mscore, batch_size=batch.batch_size)
 
     def test_step(self, batch: SonarBatch, batch_idx: int):
         raise NotImplementedError
