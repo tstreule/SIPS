@@ -45,10 +45,10 @@ class _ModelConfig:
     save_checkpoint: bool = True
 
     # Model parameters
-    keypoint_loss_weight: float = 1.0  #     # Keypoint loss weight
+    keypoint_loss_weight: float = 2.0  #     # Keypoint loss weight
     descriptor_loss_weight: float = 1.0  #   # Descriptor loss weight
     score_loss_weight = 1.0  #               # Score loss weight
-    use_color: bool = True  #                # Use color or grayscale images
+    use_color: bool = False  #               # Use color or grayscale images
     with_io: bool = True  #                  # Use IONet
     do_upsample: bool = True  #              # Upsample descriptors
     do_cross: bool = True  #                 # Use cross-border keypoints

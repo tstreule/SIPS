@@ -90,7 +90,7 @@ def _groupwise_smallest_values_mask(
 
     # Find the smallest value for each unique group tuple
     argmins = torch.argmin(grouped_data[:, :, w], dim=1, keepdim=True)
-    idx_smallest_values = grouped_data[..., w + 1].gather(1, argmins).flatten().int()
+    idx_smallest_values = grouped_data[..., w + 1].gather(1, argmins).flatten().long()
 
     # Create the filter mask using positional index
     filter_mask = torch.zeros(h, dtype=torch.bool, device=device)
@@ -188,12 +188,12 @@ def _point2point_match_batch(
     # Mask out points that don't project onto the other image
     kp2_mask = torch.isfinite(kp2_uv_proj).any(-1)  # (B,H*W,D)
     # Rounding down gives the index of the other images point
-    idx = torch.nan_to_num(kp2_uv_proj[kp2_mask] / convolution_size).int()  # (-1,2)
+    idx = torch.nan_to_num(kp2_uv_proj[kp2_mask] / convolution_size).long()  # (-1,2)
     idx[..., 0] = idx[..., 0].clip(0, H - 1)
     idx[..., 1] = idx[..., 1].clip(0, W - 1)
 
     # Calculate the distances
-    batch_idx = kp2_mask.int() * torch.arange(B, device=device)[:, None, None]
+    batch_idx = kp2_mask.long() * torch.arange(B, device=device)[:, None, None]
     batch_idx = batch_idx[kp2_mask]
     masked_dists = _point2point_distance(
         kp2_uv_proj[kp2_mask][..., None, None],
@@ -222,7 +222,7 @@ def _point2point_match_batch(
     # Reconstruct the index in kp1 to match the sequence of kp2
     #  - ``idx_kp1`` is the position of the closest keypoint for kp2_uv_projected
     #  - clipping due to bad keypoints that didn't get projected onto the other image
-    idx_kp1 = torch.nan_to_num(kp2_uv_match // convolution_size).int()
+    idx_kp1 = torch.nan_to_num(kp2_uv_match // convolution_size).long()
     idx_kp1 += torch.stack(_unravel_index_2d(col, (WS, WS)), 2) - 1  # relative index
     idx_kp1[..., 0] = idx_kp1[..., 0].clip(0, H - 1)
     idx_kp1[..., 1] = idx_kp1[..., 1].clip(0, W - 1)
@@ -271,14 +271,13 @@ def _point2linesegment_match_batch(
     # Calculate the distances
     line_points = kp2_uv_proj[kp2_mask]  # (N,D,2)
     batch_idx = (kp2_mask.int() * torch.arange(B, device=device).unsqueeze(1))[kp2_mask]
+    N = len(idx)
     points = (  # (N,D,2,WS*WS)
         # fmt: off
         kp1_uv_strided.movedim(0, 2)[tuple(idx.flatten(0, 1).T)]  # (N*D,B,2,WS,WS)
-        .unflatten(0, idx.shape[:2])  # (N*D,...) -> (N,D,...)
-        .movedim(2, 0)  # (N,D,B,...) -> (B,N,D,...)
-        .take_along_dim(batch_idx[None, :, None, None, None, None], 0)  # (B,...) -> (1,...)
-        .squeeze(0)  # (1,...) -> (...)
-        .flatten(-2, -1)  # (...,WS,WS) -> (...,WS*WS)
+        .reshape(N, D, B, 2*WS*WS)
+        .take_along_dim(batch_idx[:, None, None, None], 2)  # (N,D,1,2,WS,WS)
+        .view(N, D, 2, WS*WS)
     )
     masked_distances = _point2linesegment_distance(  # (N,D-1,D,WS*WS)
         line_points[:, :-1, None, :, None],
@@ -305,7 +304,7 @@ def _point2linesegment_match_batch(
     #  - ``idx_kp1`` is the position of the closest keypoint for kp2_uv_projected
     #  - clipping due to bad keypoints that didn't get projected onto the other image
     kp2_uv_to_round = kp2_uv_proj.take_along_dim(row[..., None, None], 2).squeeze(2)
-    idx_kp1 = torch.nan_to_num(kp2_uv_to_round // convolution_size).int()
+    idx_kp1 = torch.nan_to_num(kp2_uv_to_round // convolution_size).long()
     idx_kp1 += torch.stack(_unravel_index_2d(col, (WS, WS)), 2) - 1  # relative index
     idx_kp1[..., 0] = idx_kp1[..., 0].clip(0, H - 1)
     idx_kp1[..., 1] = idx_kp1[..., 1].clip(0, W - 1)
@@ -380,7 +379,7 @@ def match_keypoints_2d(
     kp1_matches : torch.Tensor
         Matching keypoints from kp1 (not yet masked). Shape: (H*W, 2)
     kp2_matches : torch.Tensor
-        Matching keypoints from kp1 (not yet masked). Shape: (H*W, 2)
+        Matching keypoints from kp2 (not yet masked). Shape: (H*W, 2)
     min_distances : torch.Tensor
         Distances for keypoint matches (not yet masked). Shape: (H*W,)
     argmin_distances : torch.Tensor
@@ -455,7 +454,7 @@ def match_keypoints_2d_batch(
     kp1_matches : torch.Tensor
         Matching keypoints from kp1 (not yet masked). Shape: (B, H*W, 2)
     kp2_matches : torch.Tensor
-        Matching keypoints from kp1 (not yet masked). Shape: (B, H*W, 2)
+        Matching keypoints from kp2 (not yet masked). Shape: (B, H*W, 2)
     min_distances : torch.Tensor
         Distances for keypoint matches (not yet masked). Shape: (B, H*W)
     argmin_distances : torch.Tensor
