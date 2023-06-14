@@ -1,6 +1,7 @@
 # Modules
-lightning==2.0.0
+opencv-python==4.6.0.66
 pandas==2.0.0
+pytorch-lightning==2.0.0
 scipy==1.10.1
 torch==2.0.0
 torchvision==0.15.1
