@@ -7,8 +7,8 @@
 #    + descriptor loss
 
 model:
-  use_color: True
-  with_io: False
+  use_color: False # changed...
+  with_io: True # changed...
   do_upsample: False
   do_cross: False
   descriptor_loss: True

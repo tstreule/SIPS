@@ -17,6 +17,7 @@ def main():
 
     # Initialize model and data module
     model = KeypointNetwithIOLoss(**asdict(config.model))
+    # NOTE: could optimize with `model = torch.compile(model)`
     dm = SonarDataModule(config.datasets)
 
     # Initialize trainer and make everything reproducible

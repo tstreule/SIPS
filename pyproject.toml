@@ -50,5 +50,5 @@ ignore_missing_imports = true
 disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
-module = ["matplotlib.*", "mpl_toolkits.*", "scipy.*", "torchvision.*"]
+module = ["matplotlib.*", "mpl_toolkits.*", "scipy.*", "torchvision.*", "cv2.*"]
 ignore_missing_imports = true
