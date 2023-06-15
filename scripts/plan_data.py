@@ -13,7 +13,7 @@ import drone_movements as dm
 app = typer.Typer()
 
 
-@app.callback(invoke_without_command=True)
+@app.command()
 def main(
     # Initialization
     init_roll: float = 0,
