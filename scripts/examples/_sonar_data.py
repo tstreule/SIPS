@@ -38,7 +38,7 @@ def get_random_datum(seed: int | None = None) -> SonarDatum:
         raise NotImplementedError
 
     # Make random image
-    image = torch.normal(_IMAGE * 0)
+    image = torch.rand_like(_IMAGE, dtype=torch.float) * 255
 
     # Make random pose
     position = torch.normal(torch.zeros(3), 1)  # meters
