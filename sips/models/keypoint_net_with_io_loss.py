@@ -243,6 +243,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # Get network outputs
         target = score_1, coord_1, desc_1 = self.keypoint_net(image1)
         source = score_2, coord_2, desc_2 = self.keypoint_net(image2)
+
         return target, source
 
     def _get_loss_recall(
@@ -387,7 +388,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 dim=2,
             )
 
-            inlier_pred = self.io_net.forward(
+            inlier_pred: torch.Tensor = self.io_net(
                 point_pair.permute(0, 2, 1).unsqueeze(3)
             ).squeeze()
 
