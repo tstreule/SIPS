@@ -19,7 +19,7 @@ class SonarDataset(Dataset[SonarDatumPair]):
         # img = Image.open(self.paths[index]).convert("RGB")
         a = ...
         b = ...
-        return SonarDatumPair(a, b)
+        return SonarDatumPair(a, b)  # type: ignore[arg-type]
 
 
 class DummySonarDataSet(SonarDataset):
