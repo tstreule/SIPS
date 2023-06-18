@@ -20,4 +20,4 @@ jobs:
           pip install -r requirements.txt
       - name: Analysing the code with pylint
         run: |
-          mypy --config-file=pyproject.toml $(git ls-files '*.py')
+          mypy --config-file=pyproject.toml --namespace-packages --explicit-package-bases $(git ls-files '*.py')
