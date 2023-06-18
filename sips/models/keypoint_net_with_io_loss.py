@@ -13,7 +13,7 @@ from sips.data import SonarBatch
 from sips.evaluation import evaluate_keypoint_net
 from sips.networks import InlierNet, KeypointNet, KeypointResnet
 from sips.utils.image import normalize_2d_coordinate, to_color_normalized
-from sips.utils.keypoint_matching import match_keypoints_2d_batch
+from sips.utils.keypoint_matching import PSEUDO_INF, match_keypoints_2d_batch
 from sips.utils.point_projection import warp_image_batch
 
 
@@ -74,7 +74,8 @@ def build_descriptor_loss(
         ).squeeze()
         tar_desc = F.grid_sample(
             target_des[b].unsqueeze(0),
-            tar_points[b].unsqueeze(0),
+            # convert nan to large value such that the gradient does not get nan
+            tar_points[b].unsqueeze(0).nan_to_num(PSEUDO_INF),
             align_corners=True,
         ).squeeze()
         tar_points_raw = tar_points_un[b]
@@ -323,9 +324,11 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         usp_loss = 0.5 * (target_score_associated + source_score.flatten(1)[mask])
         usp_loss *= min_distance[mask] - min_distance[mask].mean()
 
+        # Fill nan values with dummy values such that the gradient does not get nan.
+        # Note that the nan-filled values anyway get masked out
         target_score_resampled = F.grid_sample(
             target_score,
-            source_uv_warp_norm.detach(),
+            source_uv_warp_norm.detach().nan_to_num(PSEUDO_INF),
             mode="bilinear",
             align_corners=True,
         ).view(B, HC * WC)

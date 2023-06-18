@@ -137,8 +137,8 @@ def compute_matching_score_batch(
 
         # Match the descriptors from 1 to 2
         matches = bf.match(desc_1b.cpu().numpy(), desc_2b.cpu().numpy())
-        matches_idx1 = torch.tensor([m.queryIdx for m in matches])
-        matches_idx2 = torch.tensor([m.trainIdx for m in matches])
+        matches_idx1 = torch.tensor([m.queryIdx for m in matches]).long()
+        matches_idx2 = torch.tensor([m.trainIdx for m in matches]).long()
         m_coord_1b = coord_1b[matches_idx1, :]
         m_coord_2b = coord_2b[matches_idx2, :]
         # Warp the keypoints and keep only those which are visible in the other image
@@ -154,8 +154,8 @@ def compute_matching_score_batch(
 
         # Match the descriptors from 2 to 1
         matches = bf.match(desc_2b.cpu().numpy(), desc_1b.cpu().numpy())
-        matches_idx2 = torch.tensor([m.queryIdx for m in matches])
-        matches_idx1 = torch.tensor([m.trainIdx for m in matches])
+        matches_idx2 = torch.tensor([m.queryIdx for m in matches]).long()
+        matches_idx1 = torch.tensor([m.trainIdx for m in matches]).long()
         m_coord_1b = coord_1b[matches_idx1, :]
         m_coord_2b = coord_2b[matches_idx2, :]
         # Warp the keypoints and keep only those which are visible in the other image
