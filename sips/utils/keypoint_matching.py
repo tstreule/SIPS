@@ -149,10 +149,11 @@ def _point2point_distance(
     # then fill those dummy distances with nan values to obtain true distance.
     nan_mask = ~(torch.isfinite(p1).all(dim) & torch.isfinite(p2).all(dim))
     diff = p1.nan_to_num(PSEUDO_INF) - p2.nan_to_num(-PSEUDO_INF)
-    _ = diff**2
-    _ = torch.sum(_, dim=dim)
-    distance = _**0.5
-    # distance = torch.linalg.vector_norm(diff, dim=dim)
+    distance = torch.linalg.vector_norm(diff.clone(), dim=dim)
+    # Clone to prevent the following error due to inplace operation:
+    #     RuntimeError: one of the variables needed for gradient computation
+    #     has been modified by an inplace operation [...]
+    distance = distance.clone()
     distance[nan_mask] = torch.nan
     return distance
 
@@ -176,9 +177,13 @@ def _point2linesegment_distance(
     projection = _project_point_on_linesegment(
         v.nan_to_num(), w.nan_to_num(), p.nan_to_num(), dim=dim
     )
-    distance = _point2point_distance(p, projection, dim=dim)
-    distance[nan_mask] = torch.nan
-    return distance
+    # Clone to prevent the following error due to inplace operation:
+    #     RuntimeError: one of the variables needed for gradient computation
+    #     has been modified by an inplace operation [...]
+    projection = projection.clone()
+    projection[nan_mask.unsqueeze(dim).broadcast_to(projection.shape)] = torch.nan
+
+    return _point2point_distance(p, projection, dim=dim)
 
 
 # ==============================================================================
