@@ -235,10 +235,10 @@ def xyz_to_uv_batch(
     # Check if point is within operational range and field of view
     epsilon = 1e-6
     out_of_operatial_masks = [
-        r < min_range[:, None] - epsilon,
-        r > max_range[:, None] + epsilon,
-        torch.abs(theta) > azimuth[:, None] / 2 + epsilon,
-        torch.abs(phi) > elevation[:, None] / 2 + epsilon,
+        r.lt(min_range[:, None] - epsilon),
+        r.gt(max_range[:, None] + epsilon),
+        torch.abs(theta).gt(azimuth[:, None] / 2 + epsilon),
+        torch.abs(phi).gt(elevation[:, None] / 2 + epsilon),
     ]
     ooo_mask = torch.stack(out_of_operatial_masks).any(0)
 

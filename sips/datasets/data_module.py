@@ -46,10 +46,16 @@ class SonarDataModule(pl.LightningDataModule):
 
     def train_dataloader(self) -> DataLoader[SonarDatumPair]:
         return DataLoader(
-            self.data_train, batch_size=self.config.batch_size, collate_fn=SonarBatch
+            self.data_train,
+            batch_size=self.config.batch_size,
+            num_workers=self.config.num_workers,
+            collate_fn=SonarBatch,
         )
 
     def val_dataloader(self) -> DataLoader[SonarDatumPair]:
         return DataLoader(
-            self.data_val, batch_size=self.config.batch_size, collate_fn=SonarBatch
+            self.data_val,
+            batch_size=self.config.batch_size,
+            num_workers=self.config.num_workers,
+            collate_fn=SonarBatch,
         )
