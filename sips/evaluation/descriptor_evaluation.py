@@ -335,7 +335,7 @@ def _compute_correctness_homography(
          [shape[0] - 1, shape[1] - 1, 1]]
     )
     # NOTE: We don't have a real homography at hand.
-    real_warped_corners = np.dot(corners, np.transpose(real_H))
+    real_warped_corners = np.dot(corners, np.transpose(real_H))  # type: ignore[name-defined]
     real_warped_corners = real_warped_corners[:, :2] / real_warped_corners[:, 2:]
     warped_corners = np.dot(corners, np.transpose(H))
     warped_corners = warped_corners[:, :2] / warped_corners[:, 2:]
