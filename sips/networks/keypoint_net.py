@@ -175,9 +175,9 @@ class KeypointNet(torch.nn.Module):
 
         border_mask = torch.ones(B, Hc, Wc)
         border_mask[:, 0] = 0
-        border_mask[:, Hc - 1] = 0
+        border_mask[:, -1] = 0
         border_mask[:, :, 0] = 0
-        border_mask[:, :, Wc - 1] = 0
+        border_mask[:, :, -1] = 0
         border_mask = border_mask.unsqueeze(1)
         score = score * border_mask.to(score.device)
 
