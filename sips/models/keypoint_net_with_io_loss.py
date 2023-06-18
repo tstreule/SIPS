@@ -116,8 +116,8 @@ def build_descriptor_loss(
         true_y = tar_points_raw[1]
 
         # Compute recall as the number of correct matches, i.e. the first match is the correct one
-        correct_matches = (abs(match_k_x[0] - true_x) == 0) & (
-            abs(match_k_y[0] - true_y) == 0
+        correct_matches = (match_k_x[0] - true_x).abs().eq(0) & (
+            (match_k_y[0] - true_y).abs().eq(0)
         )
         recall += float(1.0 / B) * (
             float(correct_matches.float().sum()) / float(ref_desc.size(1))
@@ -127,8 +127,8 @@ def build_descriptor_loss(
             continue
 
         # Compute correct matches, allowing for a few pixels tolerance (i.e. relax_field)
-        correct_idx = (abs(match_k_x - true_x) <= relax_field) & (
-            abs(match_k_y - true_y) <= relax_field
+        correct_idx = (match_k_x - true_x).abs().le(relax_field) & (
+            (match_k_y - true_y).abs().le(relax_field)
         )
         # Get hardest negative example as an incorrect match and with the smallest descriptor distance
         incorrect_first = dmat_sorted.t()

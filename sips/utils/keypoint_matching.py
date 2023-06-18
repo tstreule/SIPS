@@ -278,8 +278,8 @@ def _point2linesegment_match_batch(
     # or that don't make up a line (only one elevation was projected).
     # In the latter case, let ``_point2point_distance()`` handle it.
     mask_finite = torch.isfinite(kp2_uv_proj).any(-1).sum(-1)
-    kp2_mask = mask_finite > 1  # (B,H*W)
-    kp2_mask_p2p = mask_finite == 1  # (B,H*W)
+    kp2_mask = mask_finite.gt(1)  # (B,H*W)
+    kp2_mask_p2p = mask_finite.eq(1)  # (B,H*W)
     # Rounding down gives the index of the other images point
     idx = torch.nan_to_num(kp2_uv_proj[kp2_mask] / convolution_size).int()  # (-1,D,2)
     idx[..., 0] = idx[..., 0].clip(0, H - 1)
@@ -515,7 +515,7 @@ def match_keypoints_2d_batch(
     kp1_matches, kp2_matches = kp_matches
 
     # Ignore distances greater than threshold
-    mask_epsilon = min_distances < convolution_size * distance_threshold
+    mask_epsilon = min_distances.lt(convolution_size * distance_threshold)
     # Allow multiple matches per kp1 keypoint
     if allow_multi_match:
         mask = mask_epsilon

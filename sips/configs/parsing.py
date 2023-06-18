@@ -7,13 +7,13 @@ from sips.configs.base_config import Config
 __all__ = ["parse_train_file"]
 
 
-def parse_train_file(file: str | Path) -> Config:
+def parse_train_file(file: str | Path | None = None) -> Config:
     """
     Parse file for training.
 
     Parameters
     ----------
-    file : str | Path
+    file : str | Path | None, optional
         **.yaml** configuration file
 
     Returns
@@ -22,7 +22,10 @@ def parse_train_file(file: str | Path) -> Config:
         Configuration object.
 
     """
-    if Path(file).suffix == ".yaml":
+    if file is None:
+        # Use default config
+        config = Config()
+    elif Path(file).suffix == ".yaml":
         # Read .yaml file
         with open(file, "r") as f:
             config_dict = yaml.safe_load(f)

@@ -4,3 +4,7 @@ __pycache__
 
 data
 sandbox
+
+# WandB offline logging dir
+wandb
+.env
