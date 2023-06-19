@@ -15,6 +15,5 @@ jobs:
       - uses: psf/black@stable
         with:
           options: "--config pyproject.toml --check --diff --verbose"
-          src: "./src"
           jupyter: true
           version: "${{ steps.black_version.outputs.BLACK }}"
