@@ -40,7 +40,7 @@ def meshgrid(
     else:
         xs = torch.linspace(0, W - 1, W, device=device, dtype=dtype)
         ys = torch.linspace(0, H - 1, H, device=device, dtype=dtype)
-    ys, xs = torch.meshgrid([ys, xs])
+    ys, xs = torch.meshgrid([ys, xs], indexing="ij")
     return xs.repeat([B, 1, 1]), ys.repeat([B, 1, 1])
 
 
@@ -123,3 +123,29 @@ def to_color_normalized(images: torch.Tensor) -> torch.Tensor:
     images -= 0.5
     images *= 0.225
     return images
+
+
+def normalize_2d_coordinate(
+    coord: torch.Tensor, width: int, height: int
+) -> torch.Tensor:
+    """
+    Normalize 2D coordinates
+
+    """
+    assert coord.shape[1] == 2
+    coord[:, 0] = (coord[:, 0] / ((width - 1) * 0.5)) - 1
+    coord[:, 1] = (coord[:, 1] / ((height - 1) * 0.5)) - 1
+    return coord
+
+
+def unnormalize_2d_coordinate(
+    coord: torch.Tensor, width: int, height: int
+) -> torch.Tensor:
+    """
+    Unnormalize 2D coordinates
+
+    """
+    assert coord.shape[1] == 2
+    coord[:, 0] = (coord[:, 0] + 1) * (0.5 * (width - 1))
+    coord[:, 1] = (coord[:, 1] + 1) * (0.5 * (height - 1))
+    return coord

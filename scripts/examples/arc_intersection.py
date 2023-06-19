@@ -62,7 +62,7 @@ def _make_uv_grid(
     return grid + torch.normal(0, std), grid + torch.normal(0, std)
 
 
-@app.callback(invoke_without_command=True)
+@app.command()
 def main(
     batch_size: int = 8,
     conv_size: int = 8,

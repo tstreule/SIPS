@@ -1,6 +1,7 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
 import torch
+import torch.nn.functional as F
 
 from sips.utils.image import image_grid
 
@@ -32,8 +33,6 @@ class KeypointNet(torch.nn.Module):
         **kwargs,
     ) -> None:
         super().__init__()
-
-        self.training = True
 
         self.use_color = use_color
         self.with_drop = with_drop
@@ -176,9 +175,9 @@ class KeypointNet(torch.nn.Module):
 
         border_mask = torch.ones(B, Hc, Wc)
         border_mask[:, 0] = 0
-        border_mask[:, Hc - 1] = 0
+        border_mask[:, -1] = 0
         border_mask[:, :, 0] = 0
-        border_mask[:, :, Wc - 1] = 0
+        border_mask[:, :, -1] = 0
         border_mask = border_mask.unsqueeze(1)
         score = score * border_mask.to(score.device)
 
@@ -215,13 +214,13 @@ class KeypointNet(torch.nn.Module):
         feat = self.relu(self.convFaa(feat))
         feat = self.convFbb(feat)
 
-        if self.training is False:
+        if not self.training:
             coord_norm = coord[:, :2].clone()
             coord_norm[:, 0] = (coord_norm[:, 0] / (float(W - 1) / 2.0)) - 1.0
             coord_norm[:, 1] = (coord_norm[:, 1] / (float(H - 1) / 2.0)) - 1.0
             coord_norm = coord_norm.permute(0, 2, 3, 1)
 
-            feat = torch.nn.functional.grid_sample(feat, coord_norm, align_corners=True)
+            feat = F.grid_sample(feat, coord_norm, align_corners=True)
 
             dn = torch.norm(feat, p=2, dim=1)  # Compute the norm.
             feat = feat.div(torch.unsqueeze(dn, 1))  # Divide by norm to normalize.

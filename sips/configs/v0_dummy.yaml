@@ -6,12 +6,19 @@
 #    - cross-border keypoints
 #    + descriptor loss
 
+arch:
+  accelerator: "cpu"
+  fast_dev_run: True # enable debugging
+
 model:
-  use_color: True
-  with_io: False
+  use_color: False # changed...
+  with_io: True # changed...
   do_upsample: False
   do_cross: False
   descriptor_loss: True
+
+datasets:
+  batch_size: 4
 
 wandb:
   dry_run: True

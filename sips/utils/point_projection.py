@@ -104,7 +104,7 @@ def uv_to_xyz_batch(
     # Use camera pose to find direction of the sonar beam for given keypoints
     # Note: By adding new axes we find every theta_rot[i] x phi_rot[j] combination.
     cam_pose = torch.from_numpy(
-        R.from_quat(torch.stack([p.rotation for p in pose])).as_matrix()
+        R.from_quat(torch.stack([p.rotation for p in pose]).cpu()).as_matrix()
     ).to(uv)
     rotations = cam_pose[:, None, None] @ theta_rot[:, :, None] @ phi_rot[:, None]
 
@@ -235,10 +235,10 @@ def xyz_to_uv_batch(
     # Check if point is within operational range and field of view
     epsilon = 1e-6
     out_of_operatial_masks = [
-        r < min_range[:, None] - epsilon,
-        r > max_range[:, None] + epsilon,
-        torch.abs(theta) > azimuth[:, None] / 2 + epsilon,
-        torch.abs(phi) > elevation[:, None] / 2 + epsilon,
+        r.lt(min_range[:, None] - epsilon),
+        r.gt(max_range[:, None] + epsilon),
+        torch.abs(theta).gt(azimuth[:, None] / 2 + epsilon),
+        torch.abs(phi).gt(elevation[:, None] / 2 + epsilon),
     ]
     ooo_mask = torch.stack(out_of_operatial_masks).any(0)
 
@@ -353,11 +353,14 @@ def warp_image(
     to_params: CameraParams,
     to_pose: CameraPose,
     image_resolution: Iterable[int],
+    n_elevations: int = 5,
 ) -> torch.Tensor:
     """
     Warp a sonar image into another image space (arc projection).
 
     """
-    points_xyz = uv_to_xyz(points_uv, from_params, from_pose, image_resolution)
+    points_xyz = uv_to_xyz(
+        points_uv, from_params, from_pose, image_resolution, n_elevations
+    )
     points_uv_proj = xyz_to_uv(points_xyz, to_params, to_pose, image_resolution)
     return points_uv_proj

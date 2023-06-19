@@ -180,6 +180,15 @@ class SonarBatch:
         fieldreprs = [f"{f.name}=..." for f in fields(self)]
         return f"{type(self).__name__}({', '.join(fieldreprs)})"
 
+    def __getitem__(self, i: int) -> SonarDatumPair:
+        sonar1 = SonarDatum(self.image1[i], self.pose1[i], self.params1[i])
+        sonar2 = SonarDatum(self.image2[i], self.pose2[i], self.params2[i])
+        return SonarDatumPair(sonar1, sonar2)
+
+    @property
+    def batch_size(self) -> int:
+        return len(self.pose1)
+
 
 # ==============================================================================
 # Type Hinting

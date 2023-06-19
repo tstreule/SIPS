@@ -9,7 +9,16 @@ from typing import Any
 @dataclass
 class _ArchConfig:
     seed: int = 42  #                        # Random seed
+
+    # Strategy
+    strategy: str = "auto"  #                # ("ddp", ...)
+    accelerator: str = "auto"  #             # ("cpu", "gpu", "tpu", ..., "auto")
+    devices: str | int = "auto"  #           # The devices to use
+    precision: str | int = "32-true"  #      # precision
+
+    # Training args
     max_epochs: int = 50  #                  # Maximum number of epochs
+    fast_dev_run: bool = False  #            # Enable for debugging purposes
 
 
 # --------------------------------------------------------------------------
@@ -18,12 +27,15 @@ class _ArchConfig:
 
 @dataclass
 class _WandBConfig:
-    name: str = ""  #                              # WandB run name
-    dry_run: bool = True  #                        # WandB dry-run (no logging)
+    dry_run: bool = True  #                        # If True, do a dry run (no logging)
+
+    offline: bool = False  #                       # Run offline (data can be streamed later to WandB servers)
+    name: str = ""  #                              # Display name for the run.
+    save_dir: str = ""  #                          # Path where data is saved
+    version: str = ""  #                           # WandB version, to resume prev. run
     project_os_env: str = "WANDB_PROJECT"  #       # WandB project (from os.env)
     entity_os_env: str = "WANDB_ENTITY"  #         # WandB entity (from os.env)
     tags: list[str] = field(default_factory=list)  # WandB tags
-    save_dir: str = ""  #                          # WandB save folder
 
     @property
     def project(self) -> str:
@@ -45,10 +57,10 @@ class _ModelConfig:
     save_checkpoint: bool = True
 
     # Model parameters
-    keypoint_loss_weight: float = 1.0  #     # Keypoint loss weight
+    keypoint_loss_weight: float = 2.0  #     # Keypoint loss weight
     descriptor_loss_weight: float = 1.0  #   # Descriptor loss weight
     score_loss_weight = 1.0  #               # Score loss weight
-    use_color: bool = True  #                # Use color or grayscale images
+    use_color: bool = False  #               # Use color or grayscale images
     with_io: bool = True  #                  # Use IONet
     do_upsample: bool = True  #              # Upsample descriptors
     do_cross: bool = True  #                 # Use cross-border keypoints
@@ -75,7 +87,7 @@ class _DatasetsConfig:
 
     # Train configuration
     batch_size: int = 8  #                        # Training batch size
-    num_workers: int = 16  #                      # Training number of workers
+    num_workers: int = 8  #                       # Training number of workers
     path: str = "/data/datasets/"  #              # Training data path
     repeat: int = 1  #                            # Number of times training dataset is repeated per epoch
 
