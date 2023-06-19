@@ -128,7 +128,6 @@ def compute_matching_score_batch(
     # Calculate matching score for every b in batch
     matching_scores: list[float] = []
     for b in range(B):
-
         # Flatten the descriptors and coordinates for matching
         desc_1b = desc_1[b].flatten(1).t()
         desc_2b = desc_2[b].flatten(1).t()
@@ -281,7 +280,6 @@ def _compute_correctness_homography(
     the correctness metrics (1, 3, 5).
 
     """
-
     # Filter out predictions
     # NOTE: Since it's a dummy version, we extract one b in batch
     b = 0

@@ -114,7 +114,6 @@ class Config:
         model: dict[str, Any] | _ModelConfig = _ModelConfig(),
         datasets: dict[str, Any] | _DatasetsConfig = _DatasetsConfig(),
     ) -> None:
-
         self.name = name  # Run name
         self.debug = debug  # Debugging flag
 

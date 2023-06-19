@@ -33,7 +33,6 @@ SONAR_TUPLE = SonarDatumPair((_IMAGE, _POSE_1, _PARAMS), (_IMAGE, _POSE_2, _PARA
 
 
 def get_random_datum(seed: int | None = None) -> SonarDatum:
-
     if seed is not None:
         raise NotImplementedError
 
