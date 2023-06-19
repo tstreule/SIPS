@@ -1,8 +1,13 @@
+import json
+from json import JSONDecodeError
+
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
+from scripts import preprocess_data
 from sips.configs.base_config import _DatasetsConfig
 from sips.data import SonarBatch, SonarDatumPair
+from sips.data_extraction.preprocessing import call_preprocessing_steps
 from sips.datasets.dataset import DummySonarDataSet, SonarDataset
 
 
@@ -14,6 +19,7 @@ class SonarDataModule(pl.LightningDataModule):
         self.prepare_data_per_node = False
 
         self.config = config
+        self.data_tuples = []
 
     def prepare_data(self) -> None:
         """
@@ -25,6 +31,25 @@ class SonarDataModule(pl.LightningDataModule):
 
         """
         ...
+        # TODO: make it so that all data preprocessing can be executed from here
+        # already looked at bags are skipped, to do this only use few lines of code in here
+        # i.e. introduce scripts that can be called from here.
+
+        # MS: combine all the datapoints of valid bags (i.e. those that have enough data)
+        # randomize order and store in folder according to config of this module
+        rosbags = self.config.rosbags
+        for this_rosbag in rosbags:
+            source_dir = call_preprocessing_steps(self.config, this_rosbag)
+            try:
+                with open(source_dir / "tuple_stamps.json") as f:
+                    tuple_stamps = json.load(f)
+            except IOError:
+                warn(f"tuple_stamps.json file missing of {this_rosbag}")
+                continue
+            except JSONDecodeError:
+                warn(f"tuple_stamps.json file empty of {this_rosbag}")
+                continue
+            # for this_tuple_stamp in tuple_stamps:
 
     def setup(self, stage: str) -> None:
         """
@@ -41,6 +66,7 @@ class SonarDataModule(pl.LightningDataModule):
 
         """
         ...
+        # MS: include test loader as well
         self.data_train: SonarDataset = DummySonarDataSet(n=100)
         self.data_val: SonarDataset = DummySonarDataSet(n=10)
 
