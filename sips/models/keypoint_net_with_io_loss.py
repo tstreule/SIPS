@@ -65,7 +65,6 @@ def build_descriptor_loss(
     margins = 0.2
 
     for b in range(B):
-
         # Grid sample reference and target descriptor
         ref_desc = F.grid_sample(
             source_des[b].unsqueeze(0),
@@ -173,7 +172,6 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         sched_decay_frequency: int = 50,
         **kwargs,
     ) -> None:
-
         super().__init__()
         self.save_hyperparameters()
 

@@ -37,7 +37,10 @@ def main(
     csv_filename: str = "example",
     csv_sep: str = "\t",
 ) -> None:
+    """
+    Plan drone movements for data acquisition.
 
+    """
     # Initialize
     init_pose = dm.MovableCameraPose.neutral_pose()
     init_pose.rotate([init_roll, init_pitch, init_yaw], degrees=degrees)

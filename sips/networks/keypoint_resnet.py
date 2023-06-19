@@ -4,8 +4,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-# from torch.utils import model_zoo
 from torchvision import models
 
 from sips.utils.image import image_grid
@@ -46,7 +44,6 @@ class KeypointEncoder(torch.nn.Module):
         self.use_dropout = with_drop
 
     def forward(self, input_image: torch.Tensor) -> list[torch.Tensor]:
-
         x = self.rn.relu(self.rn.bn1(self.rn.conv1(input_image)))
         l1 = (
             self.rn.layer1(self.rn.maxpool(x))
@@ -221,7 +218,6 @@ class KeypointResnet(torch.nn.Module):
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-
         B, _, H, W = x.shape
 
         x_: list[torch.Tensor] = self.encoderK(x)

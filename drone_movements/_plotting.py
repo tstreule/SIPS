@@ -153,7 +153,6 @@ def plot_camera_poses(
     show: bool = True,
     **kwargs,
 ) -> plt.Axes:
-
     # Assure tracker instance
     tracker = (
         pose_or_tracker

@@ -88,7 +88,6 @@ def plan_roi_poses_2d(
     back_to_init_pose: bool = False,
     degrees: bool = True,
 ) -> CameraPoseTracker:
-
     # Convert to radian
     max_theta = max_theta / 180 * math.pi if degrees else max_theta
     roi_angle = roi_angle / 180 * math.pi if degrees else roi_angle
@@ -109,7 +108,6 @@ def plan_roi_poses_2d(
 
     # Move along circles of different radius
     for r_step in range(n_radius_steps):
-
         left_to_right = r_step % 2 == 0
         _yaw_region_of_interest(tracker, roi_angle)
         for _ in range(n_theta_steps - 1):
@@ -148,7 +146,6 @@ def plan_roi_poses_3d(
     back_to_init_pose: bool = False,
     degrees: bool = True,
 ):
-
     # Convert phi angle to radian and get its step size
     max_phi = max_phi / 180 * math.pi if degrees else max_phi
     delta_phi = 2 * max_phi / (n_phi_steps - 1)
@@ -224,7 +221,6 @@ def camera2drone(
     # Translate the relative camera movements to relative drone movements
     # Note: We skip i=0 since initial pose is already set up
     for i in range(1, len(camera_tracker)):
-
         # Get previous camera and drone orientation
         prev_camera_orient = R.from_quat(camera_tracker.abs_history[i - 1].rotation)
         prev_drone_orient = R.from_quat(drone_tracker.abs_history[i - 1].rotation)
