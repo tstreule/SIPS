@@ -12,16 +12,11 @@
   // Formatting
   "editor.formatOnSave": true,
   // Formatting: Python
-<<<<<<< HEAD
   "python.formatting.provider": "black",
   "python.formatting.blackArgs": ["--config", "pyproject.toml"],
-=======
-  "python.formatting.provider": "none",
-  "python.formatting.blackArgs": ["--line-length=88"],
->>>>>>> update settings
   "isort.args": ["--profile", "black"],
   "[python]": {
-    "editor.defaultFormatter": "ms-python.python",
+    "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.codeActionsOnSave": {
       "source.organizeImports": true
     }

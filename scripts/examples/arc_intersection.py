@@ -36,7 +36,7 @@ def _set_seed(seed: int | None) -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        from torch import mps
+        from torch import mps  # type: ignore[attr-defined]
 
         mps.manual_seed(seed)
 

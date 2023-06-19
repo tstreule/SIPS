@@ -110,32 +110,6 @@ class SonarDatum:
     image: torch.Tensor  # (H,W,C)
     pose: CameraPose
     params: CameraParams
-
-    def __init__(
-        self,
-        image: "_FloatIterable",
-        pose: "_CameraPoseLike",
-        params: "_CameraParamsLike",
-    ) -> None:
-        self.image = torch.as_tensor(image)
-        assert self.image.ndim == 3
-        self.pose = _ensure_class(pose, CameraPose)
-        self.params = _ensure_class(params, CameraParams)
-
-    def __repr__(self) -> str:
-        fieldreprs = [f"{f.name}=..." for f in fields(self)]
-        return f"{type(self).__name__}({', '.join(fieldreprs)})"
-
-
-@dataclass(init=False)
-class SonarDatumStamped:
-    """
-    Stores sonar image, pose, camera parameters and timestamp.
-    """
-
-    image: torch.Tensor  # (H,W,C)
-    pose: CameraPose
-    params: CameraParams
     stamp: int
 
     def __init__(
@@ -143,17 +117,19 @@ class SonarDatumStamped:
         image: "_FloatIterable",
         pose: "_CameraPoseLike",
         params: "_CameraParamsLike",
-        stamp: int,
+        stamp: int = -1, # -1 is an invalid stamp and stands for "undefined"
     ) -> None:
         self.image = torch.as_tensor(image)
         assert self.image.ndim == 3
         self.pose = _ensure_class(pose, CameraPose)
         self.params = _ensure_class(params, CameraParams)
-        self.stamp = int(stamp)
+        self.stamp = stamp
 
     def __repr__(self) -> str:
         fieldreprs = [f"{f.name}=..." for f in fields(self)]
         return f"{type(self).__name__}({', '.join(fieldreprs)})"
+
+
 
 
 @dataclass(init=False)

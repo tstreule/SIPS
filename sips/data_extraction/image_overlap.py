@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 from PIL import Image, ImageFilter
 from torch import nn
 
-from sips.data import CameraParams, CameraPose, SonarDatumStamped
+from sips.data import CameraParams, CameraPose, SonarDatum
 from sips.utils.keypoint_matching import _unravel_index_2d
 from sips.utils.point_projection import warp_image, warp_image_batch
 
@@ -34,8 +34,7 @@ class ImageOverlap:
         self.conv_size = conv_size
         self.read_data = False
 
-        self.image_pair_stamps: list[tuple[int, int]] = []
-        self.sonar_datum: list[SonarDatumStamped] = []
+        self.sonar_datum: list[SonarDatum] = []
         self.info: dict[
             str, int | list[str] | dict[str, float | str | None] | dict[str, float]
         ]
@@ -60,7 +59,7 @@ class ImageOverlap:
 
         raise ValueError("Image timestamp not found in pose data")
 
-    def _find_sonar_datum(self, im_stamp) -> SonarDatumStamped:
+    def _find_sonar_datum(self, im_stamp) -> SonarDatum:
         for sonar_datum in self.sonar_datum:
             if im_stamp == sonar_datum.stamp:
                 return sonar_datum
@@ -70,13 +69,13 @@ class ImageOverlap:
         transform = T.Compose([T.PILToTensor()])
         return transform((im.resize((512, 512))).filter(ImageFilter.BLUR))
 
-    # Find blind spots that are brighter than threshold. Only keep one per 8x8
+    # Find pixels that are brighter than threshold. Only keep one per 8x8
     # grid. Return as uv coordinates
     def _find_bright_spots(self, im: torch.Tensor) -> torch.Tensor:
         maxpool = nn.MaxPool2d(
             self.conv_size, stride=self.conv_size, return_indices=True
         )
-        pool, indices = maxpool(im.to(torch.float))  # type: ignore
+        pool, indices = maxpool(im.to(torch.float))
         mask = pool > self.bs_threshold
         masked_indices = indices[mask]
         row, col = _unravel_index_2d(masked_indices, [4096, 512])
@@ -104,8 +103,8 @@ class ImageOverlap:
         self,
         bs1_uv: torch.Tensor,
         bs2_uv: torch.Tensor,
-        sonar_datum1: SonarDatumStamped,
-        sonar_datum2: SonarDatumStamped,
+        sonar_datum1: SonarDatum,
+        sonar_datum2: SonarDatum,
     ) -> bool:
         height, width = sonar_datum1.image.shape[1:]
         assert (
@@ -148,6 +147,9 @@ class ImageOverlap:
         # plt.show()
         return ratio > self.overlap_threshold
 
+    # TODO: check if the params in info.json are right according to current params we want
+    # if it is not given for any of the tests then run it again.
+    # include an abort value in info.json if the previous or just look how many ims and pose data are available according to info.json
     def load_data(self) -> None:
         try:
             with open(self.source_dir / "info.json", "r") as f:
@@ -174,7 +176,7 @@ class ImageOverlap:
             im_pose = self._find_pose(im_stamp, self.poses)
             im_tensor = self._blurred_tensor(im)
             self.sonar_datum.append(
-                SonarDatumStamped(
+                SonarDatum(
                     image=im_tensor,
                     pose=im_pose,
                     params=self.camera_params,
@@ -199,19 +201,21 @@ class ImageOverlap:
                 sonar_datum1,
                 sonar_datum2,
             ):
-                self.image_pair_stamps.append((sonar_datum1.stamp, sonar_datum2.stamp))
-                self.image_pair_stamps.append((sonar_datum2.stamp, sonar_datum1.stamp))
+                self.tuple_stamps.append(
+                    (sonar_datum1.stamp, sonar_datum2.stamp)
+                )  # Q: is it ok that this i symmetric?
+                self.tuple_stamps.append((sonar_datum2.stamp, sonar_datum1.stamp))
 
         return
 
     def plot(self) -> None:
-        if len(self.image_pair_stamps) < 1:
+        if len(self.tuple_stamps) < 1:
             print(
                 "Plotting not possible as there were no overlapping images found, returning"
             )
             return
-        idx = random.randrange(len(self.image_pair_stamps))
-        stamp1, stamp2 = self.image_pair_stamps[idx]
+        idx = random.randrange(len(self.tuple_stamps))
+        stamp1, stamp2 = self.tuple_stamps[idx]
         sonar_datum1 = self._find_sonar_datum(stamp1)
         sonar_datum2 = self._find_sonar_datum(stamp2)
         bs1_uv = self._find_bright_spots(sonar_datum1.image)
@@ -255,19 +259,21 @@ class ImageOverlap:
         plt.show()
         print()
 
-    def finish(self) -> None:
-        self.info["num_tuples"] = len(self.image_pair_stamps)
+    def save_data(self) -> None:
+        self.info["num_tuples"] = len(
+            self.tuple_stamps
+        )  # TODO: change the name of this
         with open(self.source_dir / "info.json", "w") as f:
             json.dump(self.info, f, indent=2)
         with open(self.source_dir / "tuple_stamps.json", "w") as f:
-            json.dump(self.image_pair_stamps, f, indent=2)
+            json.dump(self.tuple_stamps, f, indent=2)
 
 
 def main(
     conv_size: int = 8,
-    bs_threshold: int = 10,
+    bs_threshold: int = 200,
     n_elevations: int = 5,
-    overlap_threshold: float = 1,
+    overlap_threshold: float = 0.5,
     plot: bool = True,
     seed: Optional[int] = 240,
 ):
@@ -275,6 +281,8 @@ def main(
     rosbags = [
         "freeRoaming15SonarFels2-0805.bag",
     ]
+    # TODO: include threshold parameters in info.json
+    # save all possible tuples in a matrix and store the ratio between them
 
     for this_rosbag in rosbags:
         print(100 * "=")
@@ -289,10 +297,10 @@ def main(
         image_overlap.load_data()
         if image_overlap.read_data:
             image_overlap.find_pairs()
-            print(len(image_overlap.image_pair_stamps))
+            print(len(image_overlap.tuple_stamps))
             if plot:
                 image_overlap.plot()
-            image_overlap.finish()
+            image_overlap.save_data()
             print()
     return
 
