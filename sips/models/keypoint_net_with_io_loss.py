@@ -433,20 +433,26 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: SonarBatch, batch_idx: int):
+        self._shared_eval(batch, batch_idx, "val")
+
+    def test_step(self, batch: SonarBatch, batch_idx: int):
+        self._shared_eval(batch, batch_idx, "test")
+
+    def _shared_eval(self, batch: SonarBatch, batch_idx: int, prefix: str):
+        assert prefix in ("val", "test")
+
         target_out, source_out = self(batch)
         loss, recall = self._get_loss_recall(batch, target_out, source_out)
         rep, loc, c1, c3, c5, mscore = evaluate_keypoint_net(
             batch, target_out, source_out, self.keypoint_net.cell, self.top_k2
         )
-
-        self.log("val_loss", loss, batch_size=batch.batch_size)
-        self.log("val_recall", recall, batch_size=batch.batch_size)
-        self.log("val_repeatability", rep, batch_size=batch.batch_size)
-        self.log("val_localization_error", loc, batch_size=batch.batch_size)
-        self.log("val_correctness_d1", c1, batch_size=batch.batch_size)
-        self.log("val_correctness_d3", c3, batch_size=batch.batch_size)
-        self.log("val_correctness_d5", c5, batch_size=batch.batch_size)
-        self.log("val_mscore", mscore, batch_size=batch.batch_size)
-
-    def test_step(self, batch: SonarBatch, batch_idx: int):
-        raise NotImplementedError
+        # fmt: off
+        self.log(f"{prefix}_loss",               loss,   batch_size=batch.batch_size)
+        self.log(f"{prefix}_recall",             recall, batch_size=batch.batch_size)
+        self.log(f"{prefix}_repeatability",      rep,    batch_size=batch.batch_size)
+        self.log(f"{prefix}_localization_error", loc,    batch_size=batch.batch_size)
+        self.log(f"{prefix}_correctness_d1",     c1,     batch_size=batch.batch_size)
+        self.log(f"{prefix}_correctness_d3",     c3,     batch_size=batch.batch_size)
+        self.log(f"{prefix}_correctness_d5",     c5,     batch_size=batch.batch_size)
+        self.log(f"{prefix}_matching_score",     mscore, batch_size=batch.batch_size)
+        # fmt: on
