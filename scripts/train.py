@@ -15,6 +15,7 @@ import typer
 from pytorch_lightning import Trainer, seed_everything
 from typing_extensions import Annotated
 
+from sips.callbacks import get_callbacks
 from sips.configs import parse_train_file
 from sips.datasets import SonarDataModule
 from sips.models import KeypointNetwithIOLoss
@@ -47,6 +48,12 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
     model = _torch_compile(model)
     dm = SonarDataModule(config.datasets)
 
+    # Initialize callbacks
+    callbacks = get_callbacks(
+        monitors=[("val_repeatability", "max"), ("val_matching_score", "max")],
+        config=config.model,
+    )
+
     # Initialize trainer and make everything reproducible
     # c.f. https://lightning.ai/docs/pytorch/stable/common/trainer.html#reproducibility
     seed_everything(config.arch.seed, workers=True)
@@ -57,15 +64,20 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
         accelerator=config.arch.accelerator,
         devices=config.arch.devices,
         # Training args
+        default_root_dir=config.model.checkpoint_path,
+        enable_checkpointing=config.model.save_checkpoint,
         max_epochs=config.arch.max_epochs,
-        callbacks=None,
+        callbacks=callbacks,
+        check_val_every_n_epoch=None,  # must be None since 'callbacks' is implemented
         logger=setup_wandb_logger(config),
-        fast_dev_run=config.arch.fast_dev_run,
         log_every_n_steps=config.arch.log_every_n_steps,
+        # Debugging
+        fast_dev_run=config.arch.fast_dev_run,
+        num_sanity_val_steps=None,
     )
 
     # Train model
-    trainer.fit(model, datamodule=dm, ckpt_path=None)
+    trainer.fit(model, datamodule=dm)
 
     # Test (only right before publishing your paper or pushing to production!)
     # trainer.test(datamodule=dm, ckpt_path="best")

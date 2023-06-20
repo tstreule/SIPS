@@ -54,8 +54,14 @@ class _WandBConfig:
 @dataclass
 class _ModelConfig:
     # Checkpointing
-    checkpoint_path: str = "/data/experiments/sips/"
+    checkpoint_path: str = "data/experiments/"
     save_checkpoint: bool = True
+    checkpoint_every_n_epochs: int = 5
+
+    # Early stopping
+    # Note that the patience parameter strongly depends on checkpoint_every_n_epochs,
+    # i.e. training will stop earliest after (every_n_epochs+1)*patience epochs.
+    early_stopping_patience: int = 3
 
     # Model parameters
     keypoint_loss_weight: float = 2.0  #     # Keypoint loss weight
@@ -89,7 +95,7 @@ class _DatasetsConfig:
     # Train configuration
     batch_size: int = 8  #                        # Training batch size
     num_workers: int = 8  #                       # Training number of workers
-    path: str = "/data/datasets/"  #              # Training data path
+    path: str = "data/datasets/"  #              # Training data path
     repeat: int = 1  #                            # Number of times training dataset is repeated per epoch
 
 

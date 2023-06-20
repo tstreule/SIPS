@@ -449,6 +449,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             batch, target_out, source_out, self.keypoint_net.cell, self.top_k2
         )
         # fmt: off
+        # NOTE: If names are adjusted, also adjust it in 'callbacks.py'.
         self.log(f"{prefix}_loss",               loss,   batch_size=batch.batch_size)
         self.log(f"{prefix}_recall",             recall, batch_size=batch.batch_size)
         self.log(f"{prefix}_repeatability",      rep,    batch_size=batch.batch_size)
