@@ -8,7 +8,9 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch import optim
+from typing_extensions import Self
 
+from sips.configs.base_config import _ModelConfig
 from sips.data import SonarBatch
 from sips.evaluation import evaluate_keypoint_net
 from sips.networks import InlierNet, KeypointNet, KeypointResnet
@@ -153,12 +155,30 @@ class KeypointNetwithIOLoss(pl.LightningModule):
     Model class encapsulating the KeypointNet and the IONet.
     """
 
+    @classmethod
+    def from_config(cls, config: _ModelConfig) -> Self:
+        return cls(
+            keypoint_loss_weight=config.keypoint_loss_weight,
+            descriptor_loss_weight=config.descriptor_loss_weight,
+            score_loss_weight=config.score_loss_weight,
+            with_io=config.with_io,
+            use_color=config.use_color,
+            do_upsample=config.do_upsample,
+            do_cross=config.do_cross,
+            descriptor_loss=config.descriptor_loss,
+            with_drop=True,
+            keypoint_net_type=config.keypoint_net_type,
+            opt_learn_rate=config.opt_learn_rate,
+            opt_weight_decay=config.opt_weight_decay,
+            sched_decay_rate=config.sched_decay_rate,
+            sched_decay_frequency=config.sched_decay_frequency,
+        )
+
     def __init__(
         self,
         keypoint_loss_weight: float = 1.0,
         descriptor_loss_weight: float = 2.0,
         score_loss_weight: float = 1.0,
-        keypoint_net_learning_rate: float = 0.001,
         with_io: bool = True,
         use_color: bool = True,
         do_upsample: bool = True,
@@ -173,12 +193,13 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         **kwargs,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters()
+        # Do not call 'self.save_hyperparameters()' since ...
+        # ... 1. it's logged in 'utils/logging.py'
+        # ... 2. it's may cause problems for the WandB logger
 
         self.keypoint_loss_weight = keypoint_loss_weight
         self.descriptor_loss_weight = descriptor_loss_weight
         self.score_loss_weight = score_loss_weight
-        self.keypoint_net_learning_rate = keypoint_net_learning_rate
 
         self.cell = 8  # Size of each output cell. Keep this fixed.
         self.border_remove = 4  # Remove points this close to the border.

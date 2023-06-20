@@ -7,7 +7,6 @@ from sips.utils.dotenv import load_dotenv
 load_dotenv()
 
 
-from dataclasses import asdict
 from typing import Optional
 
 import torch._dynamo
@@ -44,7 +43,7 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
     config = parse_train_file(config_file)
 
     # Initialize model and data module
-    model = KeypointNetwithIOLoss(**asdict(config.model))
+    model = KeypointNetwithIOLoss.from_config(config.model)
     model = _torch_compile(model)
     dm = SonarDataModule(config.datasets)
 
