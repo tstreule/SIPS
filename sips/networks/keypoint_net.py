@@ -39,17 +39,13 @@ class KeypointNet(torch.nn.Module):
         self.do_cross = do_cross
         self.do_upsample = do_upsample
 
-        if self.use_color:
-            c0 = 3
-        else:
-            c0 = 1
-
         self.bn_momentum = 0.1
         self.cross_ratio = 2.0
 
         if self.do_cross is False:
             self.cross_ratio = 1.0
 
+        c0 = 3 if self.use_color else 1
         c1, c2, c3, c4, c5, d1 = 32, 64, 128, 256, 256, 512
 
         self.conv1a = torch.nn.Sequential(

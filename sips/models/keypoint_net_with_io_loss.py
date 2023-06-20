@@ -207,6 +207,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 do_cross=do_cross,
             )
         elif keypoint_net_type == "KeypointResnet":
+            if not self.use_color:
+                raise ValueError("Resnet expects 3D input. Set 'use_color' to True.")
             self.keypoint_net = KeypointResnet(with_drop=with_drop)
         else:
             msg = f"Keypoint net type not supported {keypoint_net_type}"
@@ -235,7 +237,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # Normalize images and (optional) 1D -> 3D
         image1 = to_color_normalized(batch.image1.clone())
         image2 = to_color_normalized(batch.image2.clone())
-        if self.keypoint_net.use_color:
+        if self.use_color:
             image1 = image1.repeat_interleave(3, dim=1)
             image2 = image2.repeat_interleave(3, dim=1)
 
