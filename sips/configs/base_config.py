@@ -18,7 +18,6 @@ class _ArchConfig:
 
     # Training args
     max_epochs: int = 50  #                  # Maximum number of epochs
-    fast_dev_run: bool = False  #            # Enable for debugging purposes
     log_every_n_steps: int = 50  #           # Logging interval
 
 
@@ -115,7 +114,7 @@ class Config:
     def __init__(
         self,
         name: str = "",
-        debug: bool = True,
+        debug: bool = False,
         arch: dict[str, Any] | _ArchConfig = _ArchConfig(),
         wandb: dict[str, Any] | _WandBConfig = _WandBConfig(),
         model: dict[str, Any] | _ModelConfig = _ModelConfig(),

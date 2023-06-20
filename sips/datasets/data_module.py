@@ -41,8 +41,8 @@ class SonarDataModule(pl.LightningDataModule):
 
         """
         ...
-        self.data_train: SonarDataset = DummySonarDataSet(n=100)
-        self.data_val: SonarDataset = DummySonarDataSet(n=10)
+        self.data_train: SonarDataset = DummySonarDataSet(n=32)
+        self.data_val: SonarDataset = DummySonarDataSet(n=8)
 
     def train_dataloader(self) -> DataLoader[SonarDatumPair]:
         return DataLoader(

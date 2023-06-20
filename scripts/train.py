@@ -23,6 +23,18 @@ from sips.utils.logging import setup_wandb_logger
 app = typer.Typer()
 
 
+def _set_debug(debug: bool):
+    if not debug:
+        return
+
+    import torch
+    from torch import autograd
+
+    autograd.set_detect_anomaly(True)  # type: ignore[attr-defined]
+    torch.set_printoptions(precision=2, threshold=100, edgeitems=2, sci_mode=False)
+    torch._dynamo.config.verbose = True  # type: ignore[attr-defined]
+
+
 def _torch_compile(model: KeypointNetwithIOLoss, **kwargs) -> KeypointNetwithIOLoss:
     # NOTE: Ideally we would call `model = torch.compile(model)` and add a
     #  `@torch.compile(dynamic=True)` decorator to the
@@ -41,6 +53,7 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
     # Read configuration
     config_file = config_file or "sips/configs/v0_dummy.yaml"  # TODO: Delete this line
     config = parse_train_file(config_file)
+    _set_debug(config.debug)
 
     # Initialize model and data module
     model = KeypointNetwithIOLoss.from_config(config.model)
@@ -71,7 +84,7 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
         logger=setup_wandb_logger(config),
         log_every_n_steps=config.arch.log_every_n_steps,
         # Debugging
-        fast_dev_run=config.arch.fast_dev_run,
+        fast_dev_run=config.debug,
         num_sanity_val_steps=None,
     )
 
