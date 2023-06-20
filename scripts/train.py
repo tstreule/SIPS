@@ -59,8 +59,9 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
         # Training args
         max_epochs=config.arch.max_epochs,
         callbacks=None,
-        logger=setup_wandb_logger(config.wandb),
+        logger=setup_wandb_logger(config),
         fast_dev_run=config.arch.fast_dev_run,
+        log_every_n_steps=config.arch.log_every_n_steps,
     )
 
     # Train model

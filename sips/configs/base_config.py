@@ -19,6 +19,7 @@ class _ArchConfig:
     # Training args
     max_epochs: int = 50  #                  # Maximum number of epochs
     fast_dev_run: bool = False  #            # Enable for debugging purposes
+    log_every_n_steps: int = 50  #           # Logging interval
 
 
 # --------------------------------------------------------------------------
