@@ -7,6 +7,7 @@ import numpy.typing as npt
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+from pytorch_lightning.loggers.wandb import WandbLogger
 from torch import optim
 from typing_extensions import Self
 
@@ -155,6 +156,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
     Model class encapsulating the KeypointNet and the IONet.
     """
 
+    logger: WandbLogger | None  # type hint
+
     @classmethod
     def from_config(cls, config: _ModelConfig) -> Self:
         return cls(
@@ -242,12 +245,19 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # Other useful things to track
         self.vis: dict[str, npt.NDArray[np.float64]] = {}
 
-    def configure_optimizers(self) -> optim.Optimizer:
-        return optim.Adam(
+    def configure_optimizers(self):
+        optimizer = optim.Adam(
             self.parameters(),
             lr=self.opt_learn_rate,
             weight_decay=self.opt_weight_decay,
         )
+        lr_scheduler = {
+            "scheduler": optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, factor=self.sched_decay_rate
+            ),
+            "monitor": "val_loss",
+        }
+        return [optimizer], [lr_scheduler]
 
     def forward(
         self, batch: SonarBatch

@@ -2,9 +2,14 @@
 Implements PyTorch Lightning Callbacks for model training.
 
 """
-from pytorch_lightning.callbacks import Callback, EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import (
+    Callback,
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 
-from sips.configs.base_config import _ModelConfig
+from sips.configs import Config
 
 
 def _get_model_checkpoint_callback(
@@ -39,9 +44,7 @@ def _get_early_stopping_callback(
     return EarlyStopping(monitor=monitor, mode=mode, patience=patience)
 
 
-def get_callbacks(
-    monitors: list[tuple[str, str]], config: _ModelConfig
-) -> list[Callback]:
+def get_callbacks(monitors: list[tuple[str, str]], config: Config) -> list[Callback]:
     """
     Return list of training callbacks.
 
@@ -49,7 +52,7 @@ def get_callbacks(
     ----------
     monitors : list[tuple[str, str]]
         List of (score_name, min_or_max) tuples. E.g., [("score_name", "min")].
-    config : _ModelConfig
+    config : Config
         Moel configuration.
 
     Returns
@@ -60,15 +63,20 @@ def get_callbacks(
     """
     callbacks: list[Callback] = []
 
+    # Learning rate monitor
+    if not config.wandb.dry_run:
+        callbacks.append(LearningRateMonitor())
+
+    # Add checkpointing and stopping callback the given scores
     for monitor, mode in monitors:
         # Model checkpointing
         ckpt = _get_model_checkpoint_callback(
-            monitor, mode, config.checkpoint_every_n_epochs
+            monitor, mode, config.model.checkpoint_every_n_epochs
         )
         callbacks.append(ckpt)
         # Early stopping
         stop = _get_early_stopping_callback(
-            monitor, mode, config.early_stopping_patience
+            monitor, mode, config.model.early_stopping_patience
         )
         callbacks.append(stop)
 

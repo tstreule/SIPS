@@ -63,7 +63,7 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
     # Initialize callbacks
     callbacks = get_callbacks(
         monitors=[("val_repeatability", "max"), ("val_matching_score", "max")],
-        config=config.model,
+        config=config,
     )
 
     # Initialize trainer and make everything reproducible

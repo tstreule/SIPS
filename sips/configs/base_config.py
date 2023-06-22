@@ -60,7 +60,7 @@ class _ModelConfig:
     # Early stopping
     # Note that the patience parameter strongly depends on checkpoint_every_n_epochs,
     # i.e. training will stop earliest after (every_n_epochs+1)*patience epochs.
-    early_stopping_patience: int = 3
+    early_stopping_patience: int = 10
 
     # Model parameters
     keypoint_loss_weight: float = 2.0  #     # Keypoint loss weight
