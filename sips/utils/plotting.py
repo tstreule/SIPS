@@ -1,8 +1,10 @@
-from typing import Iterable
+import io
+from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from PIL import Image
 
 # ==============================================================================
 # Colors
@@ -158,3 +160,15 @@ def plot_arcs_3d(
     fig.tight_layout()
 
     return ax
+
+
+def fig2img(fig: Any, **kwargs) -> Image.Image:
+    """
+    Convert a Matplotlib figure to a PIL Image and return it.
+
+    """
+    buf = io.BytesIO()
+    fig.savefig(buf, **kwargs)
+    buf.seek(0)
+    img = Image.open(buf)
+    return img

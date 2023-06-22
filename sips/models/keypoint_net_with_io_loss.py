@@ -2,6 +2,7 @@
 
 from typing import Callable, Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import pytorch_lightning as pl
@@ -11,13 +12,26 @@ from pytorch_lightning.loggers.wandb import WandbLogger
 from torch import optim
 from typing_extensions import Self
 
+import wandb
 from sips.configs.base_config import _ModelConfig
 from sips.data import SonarBatch
 from sips.evaluation import evaluate_keypoint_net
 from sips.networks import InlierNet, KeypointNet, KeypointResnet
 from sips.utils.image import normalize_2d_coordinate, to_color_normalized
 from sips.utils.keypoint_matching import PSEUDO_INF, match_keypoints_2d_batch
-from sips.utils.point_projection import warp_image_batch
+from sips.utils.plotting import (
+    COLOR_HIGHLIGHT,
+    COLOR_SONAR_1,
+    COLOR_SONAR_2,
+    fig2img,
+    plot_arcs_2d,
+    plot_arcs_3d,
+)
+from sips.utils.point_projection import (
+    uv_to_xyz_batch,
+    warp_image_batch,
+    xyz_to_uv_batch,
+)
 
 
 def build_descriptor_loss(
@@ -474,13 +488,108 @@ class KeypointNetwithIOLoss(pl.LightningModule):
 
         return loss
 
-    def validation_step(self, batch: SonarBatch, batch_idx: int):
-        self._shared_eval(batch, batch_idx, "val")
+    def validation_step(self, batch: SonarBatch, batch_idx: int) -> None:
+        B, _, H, W = batch.image1.shape
+        (_, coord_1, _), (_, coord_2, _) = self._shared_eval(batch, batch_idx, "val")
 
-    def test_step(self, batch: SonarBatch, batch_idx: int):
+        if self.logger is None:
+            return
+
+        # NOTE: The image warping and keypoint matching technically allready have been
+        #  done at the forward call of this class.  Therefore, it's quite redundant and
+        #  could be optimized accordingly.
+
+        # Warp coordinates to image 1
+        D = self.n_elevations
+        coord_1_xyz = uv_to_xyz_batch(coord_1, batch.params1, batch.pose1, (H, W), D)
+        coord_2_xyz = uv_to_xyz_batch(coord_2, batch.params2, batch.pose2, (H, W), D)
+        coord_2_warp = xyz_to_uv_batch(coord_2_xyz, batch.params1, batch.pose1, (H, W))
+
+        # Match keypoints
+        matches_1, matches_2, dists, _, mask = match_keypoints_2d_batch(
+            # transpose such that the keypoints are ordered according to a proper meshgrid
+            coord_1.mT.contiguous(),
+            coord_2_warp.mT.contiguous(),
+            self.cell,
+            self.epsilon_uv,
+            allow_multi_match=True,
+            distance=self.distance_metric,
+        )
+
+        for b in range(B):
+            # Get 2D plot
+            ax2d = plot_arcs_2d(
+                [coord_1[b].flatten(1).t(), coord_2_warp[b].flatten(2).mT],
+                (W, H),
+                self.cell,
+                [COLOR_SONAR_1, COLOR_SONAR_2],
+                (matches_1[b][mask[b]].cpu(), matches_2[b][mask[b]]),
+                COLOR_HIGHLIGHT,
+            )
+            ax2d.set_axis_off()
+            ax2d.figure.set_size_inches(15, 15)
+            img2d = fig2img(ax2d.figure, dpi=90, bbox_inches="tight", pad_inches=0)
+            plt.close()
+
+            # Reshape 3D coordinates for plotting
+            xyz_1_b = coord_1_xyz[b].reshape(self.n_elevations, 3, -1).movedim(2, 0)
+            xyz_2_b = coord_2_xyz[b].reshape(self.n_elevations, 3, -1).movedim(2, 0)
+            # Get 3D overlap
+            nan_mask = coord_2_warp[b].flatten(2).isnan().any(1).t()
+            xyz_2_b_filtered = xyz_2_b.clone()
+            xyz_2_b_filtered[nan_mask] = torch.nan
+            # Get 3D plot
+            ax3d = plot_arcs_3d(
+                [xyz_1_b[::12], xyz_2_b[::12], xyz_2_b_filtered[::12]],
+                [batch.pose1[b].position, batch.pose2[b].position, None],
+                colors=[COLOR_SONAR_1, COLOR_SONAR_2, COLOR_HIGHLIGHT],
+            )
+            ax3d.view_init(elev=30, azim=-120, roll=0)  # type: ignore
+            img3d = fig2img(ax3d.figure, dpi=200, bbox_inches="tight", pad_inches=0)
+            plt.close()
+
+            # Log images
+            dists_b = dists[b, mask[b]]
+            self.table.add_data(
+                self.logger.experiment.step,
+                wandb.Image(batch.image1[b]),
+                wandb.Image(batch.image2[b]),
+                wandb.Image(img2d),
+                wandb.Image(img3d),
+                dists_b.mean(),
+                dists_b.size(0),
+            )
+
+    def on_validation_start(self) -> None:
+        if self.logger is None:
+            return
+
+        table_columns = [
+            # fmt: off
+            "step", "img1", "img2", "plot2d", "plot3d",
+            "mean_dist", "num_projections",
+        ]
+        self.table = wandb.Table(columns=table_columns)
+
+    def on_validation_end(self) -> None:
+        if self.logger is None:
+            return
+
+        step = self.logger.experiment.step
+        commit = self.current_epoch % 1 == 0
+        # `commit=False` just updates the last table
+        self.logger.experiment.log(
+            {"predictions": self.table}, step=step, commit=commit
+        )
+
+        del self.table
+
+    def test_step(self, batch: SonarBatch, batch_idx: int) -> None:
         self._shared_eval(batch, batch_idx, "test")
 
-    def _shared_eval(self, batch: SonarBatch, batch_idx: int, prefix: str):
+    def _shared_eval(
+        self, batch: SonarBatch, batch_idx: int, prefix: str
+    ) -> _forward_return_type:
         assert prefix in ("val", "test")
 
         target_out, source_out = self(batch)
@@ -489,7 +598,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             batch, target_out, source_out, self.keypoint_net.cell, self.top_k2
         )
         # fmt: off
-        # NOTE: If names are adjusted, also adjust it in 'callbacks.py'.
+        # NOTE: If scores are renamed, must also rename in 'callbacks.py'!
         self.log(f"{prefix}_loss",               loss,   batch_size=batch.batch_size)
         self.log(f"{prefix}_recall",             recall, batch_size=batch.batch_size)
         self.log(f"{prefix}_repeatability",      rep,    batch_size=batch.batch_size)
@@ -499,3 +608,5 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         self.log(f"{prefix}_correctness_d5",     c5,     batch_size=batch.batch_size)
         self.log(f"{prefix}_matching_score",     mscore, batch_size=batch.batch_size)
         # fmt: on
+
+        return target_out, source_out
