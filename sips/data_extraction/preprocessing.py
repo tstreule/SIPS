@@ -1,6 +1,7 @@
 import itertools
 import json
 import os
+import random
 from json import JSONDecodeError
 from pathlib import Path
 from warnings import warn
@@ -10,6 +11,7 @@ import numpy as np
 import numpy.typing as npt
 import torch
 import torchvision.transforms as T
+from matplotlib import pyplot as plt
 from PIL import Image, ImageFilter
 from rosbags.rosbag1 import Reader
 from rosbags.rosbag1.reader import ReaderError
@@ -214,8 +216,13 @@ def call_preprocessing_steps(config: _DatasetsConfig, rosbag: str) -> None | str
                     data_filtered = dataextraction.filter_data()
                     if data_filtered:
                         overlap_calculated = dataextraction.calculate_overlap()
+    else:
+        print(
+            "Data has been preprocessed in previous run, skipping the rest of the operations"
+        )
     config_num = find_config_num(config, source_dir)
     save_dir = source_dir / str(config_num)
+
     # Failed at some stage
     if not (
         conns_checked
@@ -232,6 +239,7 @@ def call_preprocessing_steps(config: _DatasetsConfig, rosbag: str) -> None | str
         with open(save_dir / "info.json", "w") as f:
             info["failed"] = True
             json.dump(info, f, indent=2)
+        return None
     return save_dir
 
 
@@ -629,6 +637,7 @@ class Preprocessor:
                 "num_datapoints_after_filtering", num_datapoints_after_filtering
             )
             return False
+        # TODO: do we need both?
         with open(self.this_config_save_dir / "unfiltered_pose_data.json", "w") as f:
             json.dump(self.unfiltered_poses, f, indent=2)
         with open(self.save_dir / "pose_data.json", "w") as f:
@@ -772,3 +781,184 @@ class Preprocessor:
         with open(self.this_config_save_dir / "tuple_stamps.json", "w") as f:
             json.dump(tuple_stamps, f, indent=2)
         return True
+
+
+def _find_bright_spots(im: torch.Tensor, conv_size=8, bs_threshold=210) -> torch.Tensor:
+    maxpool = nn.MaxPool2d(conv_size, stride=conv_size, return_indices=True)
+    pool, indices = maxpool(im.to(torch.float))
+    mask = pool > bs_threshold
+    masked_indices = indices[mask]
+    row, col = _unravel_index_2d(masked_indices, [4096, 512])
+    bright_spots_temp = torch.column_stack((row, col)).to(torch.float)
+    bright_spots = torch.full((64 * 64, 2), torch.nan)
+    bright_spots[: bright_spots_temp.shape[0], :] = bright_spots_temp
+    return bright_spots.permute(1, 0).view(2, 64, 64)
+
+
+def plot_overlap(config, source_dir) -> None:
+    try:
+        with open(source_dir / "tuple_stamps.json") as f:
+            tuple_stamps = json.load(f)
+    except IOError:
+        warn(f"tuple_stamps.json file")
+        return
+    except JSONDecodeError:
+        warn(f"tuple_stamps.json file empty")
+        return
+    idx = random.randrange(len(tuple_stamps))
+    stamp0, stamp1 = tuple_stamps[idx]
+    image_dir = source_dir.parent / "images"
+    transform = T.Compose([T.PILToTensor()])
+    im_path0 = image_dir / f"sonar_{stamp0}.png"
+    im_path1 = image_dir / f"sonar_{stamp1}.png"
+    try:
+        im0 = Image.open(im_path0)
+    except FileNotFoundError:
+        warn("Image file not found, skipping the rest of the operations")
+        return  # type: ignore[return-value]
+    im_tensor0 = transform((im0.resize(config.image_shape)))
+    try:
+        im1 = Image.open(im_path1)
+    except FileNotFoundError:
+        warn("Image file not found, skipping the rest of the operations")
+        return  # type: ignore[return-value]
+    im_tensor1 = transform((im1.resize((512, 512))))
+    with open(source_dir / "unfiltered_pose_data.json") as f:
+        poses = json.load(f)
+    pose0: dict[str, int | dict[str, float] | list[float]] = {}
+    pose1: dict[str, int | dict[str, float] | list[float]] = {}
+    for this_pose in poses:
+        if (not len(pose0) == 0) and (not len(pose1) == 0):
+            break
+        if this_pose["timestamp"] == stamp0:
+            pose0 = this_pose
+            continue
+        if this_pose["timestamp"] == stamp1:
+            pose1 = this_pose
+            continue
+    if len(pose0) == 0 or len(pose1) == 0:
+        warn("Pose data not found, skipping the rest of the operations")
+        return
+    sonar_datum0 = SonarDatum(
+        image=im_tensor0,
+        pose=CameraPose(
+            position=[
+                pose0["point_position"]["x"],  # type ignore[index, call-overload]
+                pose0["point_position"]["y"],  # type ignore[index, call-overload]
+                pose0["point_position"]["z"],  # type ignore[index, call-overload]
+            ],
+            rotation=[
+                pose0["quaterion_orientation"][
+                    "x"
+                ],  # type ignore[index, call-overload]
+                pose0["quaterion_orientation"][
+                    "y"
+                ],  # type ignore[index, call-overload]
+                pose0["quaterion_orientation"][
+                    "z"
+                ],  # type ignore[index, call-overload]
+                pose0["quaterion_orientation"][
+                    "w"
+                ],  # type ignore[index, call-overload]
+            ],
+        ),
+        params=CameraParams(
+            min_range=config.min_range,
+            max_range=config.max_range,
+            azimuth=config.horizontal_fov,
+            elevation=config.vertical_fov,
+        ),
+    )
+    sonar_datum1 = SonarDatum(
+        image=im_tensor1,
+        pose=CameraPose(
+            position=[
+                pose1["point_position"]["x"],  # type ignore[index]
+                pose1["point_position"]["y"],  # type ignore[index]
+                pose1["point_position"]["z"],  # type ignore[index]
+            ],
+            rotation=[
+                pose1["quaterion_orientation"]["x"],  # type ignore[index]
+                pose1["quaterion_orientation"]["y"],  # type ignore[index]
+                pose1["quaterion_orientation"]["z"],  # type ignore[index]
+                pose1["quaterion_orientation"]["w"],  # type ignore[index]
+            ],
+        ),
+        params=CameraParams(
+            min_range=config.min_range,
+            max_range=config.max_range,
+            azimuth=config.horizontal_fov,
+            elevation=config.vertical_fov,
+        ),
+    )
+    bs0_uv = _find_bright_spots(
+        sonar_datum0.image, config.conv_size, config.bright_spots_threshold
+    )
+    bs1_uv = _find_bright_spots(
+        sonar_datum1.image, config.conv_size, config.bright_spots_threshold
+    )
+    height, width = sonar_datum1.image.shape[1:]
+    bs0_uv_proj = warp_image_batch(
+        bs0_uv.unsqueeze(0),
+        [sonar_datum0.params],
+        [sonar_datum0.pose],
+        [sonar_datum1.params],
+        [sonar_datum1.pose],
+        (width, height),
+    )
+    bs1_uv_proj = warp_image_batch(
+        bs1_uv.unsqueeze(0),
+        [sonar_datum1.params],
+        [sonar_datum1.pose],
+        [sonar_datum0.params],
+        [sonar_datum0.pose],
+        (width, height),
+    )
+
+    black = torch.full((512, 512), 255)
+    _, ax = plt.subplots(2, 3)
+    ax[0, 0].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
+    ax[0, 1].imshow(black, cmap="gray")
+    ax[0, 1].plot(bs0_uv[1], bs0_uv[0], ",w")
+    ax[0, 2].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
+    ax[0, 2].plot(bs0_uv[1], bs0_uv[0], ".r", alpha=0.5)
+    ax[0, 2].plot(
+        bs1_uv_proj[:, :, 1, ...].flatten(),
+        bs1_uv_proj[:, :, 0, ...].flatten(),
+        ".b",
+        alpha=0.5,
+    )
+    ax[1, 0].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
+    ax[1, 1].imshow(black, cmap="gray")
+    ax[1, 1].plot(bs1_uv[1], bs1_uv[0], ",w")
+    ax[1, 2].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
+    ax[1, 2].plot(bs1_uv[1], bs1_uv[0], ".r", alpha=0.5)
+    ax[1, 2].plot(
+        bs0_uv_proj[:, :, 1, ...].flatten(),
+        bs0_uv_proj[:, :, 0, ...].flatten(),
+        ".b",
+        alpha=0.5,
+    )
+    plt.show()
+    return
+    _, ax = plt.subplots(2, 2)
+    ax[0, 0].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
+    ax[0, 1].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
+    ax[1, 0].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
+    ax[1, 0].plot(bs0_uv[1], bs0_uv[0], ".r", alpha=0.5)
+    ax[1, 1].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
+    ax[1, 1].plot(bs1_uv[1], bs1_uv[0], ".r", alpha=0.5)
+    ax[1, 0].plot(
+        bs1_uv_proj[:, :, 1, ...].flatten(),
+        bs1_uv_proj[:, :, 0, ...].flatten(),
+        ".b",
+        alpha=0.5,
+    )
+    ax[1, 1].plot(
+        bs0_uv_proj[:, :, 1, ...].flatten(),
+        bs0_uv_proj[:, :, 0, ...].flatten(),
+        ".b",
+        alpha=0.5,
+    )
+    plt.show()
+    return

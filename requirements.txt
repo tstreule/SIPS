@@ -1,5 +1,4 @@
 # Modules
-lightning==2.0.0
 opencv-python==4.6.0.66 # NB: called opencv in conda
 pandas==2.0.0
 python-dotenv==1.0.0

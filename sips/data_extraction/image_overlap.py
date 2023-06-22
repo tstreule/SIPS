@@ -33,7 +33,7 @@ class ImageOverlap:
         self.overlap_threshold = overlap_threshold
         self.conv_size = conv_size
         self.read_data = False
-
+        self.tuple_stamps: list[tuple[int, int]] = []
         self.sonar_datum: list[SonarDatum] = []
         self.info: dict[
             str, int | list[str] | dict[str, float | str | None] | dict[str, float]

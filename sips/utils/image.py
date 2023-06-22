@@ -98,10 +98,11 @@ def to_gray_normalized(images: torch.Tensor) -> torch.Tensor:
     -------
     normalized_images: torch.Tensor
         Normalized grayscale images.
+
     """
     assert len(images.shape) == 4
-    images -= 0.5
-    images *= 0.225
+    images = images - 0.5
+    images = images * 0.225
     normalized_images = images.mean(1).unsqueeze(1)
     return normalized_images
 
@@ -118,10 +119,11 @@ def to_color_normalized(images: torch.Tensor) -> torch.Tensor:
     -------
     normalized_images: torch.Tensor
         Normalized grayscale images.
+
     """
     assert len(images.shape) == 4
-    images -= 0.5
-    images *= 0.225
+    images = images - 0.5
+    images = images * 0.225
     return images
 
 

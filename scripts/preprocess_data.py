@@ -11,8 +11,8 @@ from sips.data_extraction.preprocessing import (
     Preprocessor,
     call_preprocessing_steps,
     check_preprocessing_status,
+    plot_overlap,
 )
-from sips.data_extraction.utils.handle_configs import find_config_num
 
 app = typer.Typer()
 
@@ -29,8 +29,10 @@ def main(
         for this_rosbag in rosbags:
             print(100 * "=")
             print(f"Start processing {this_rosbag}")
-            _ = call_preprocessing_steps(config, this_rosbag)
-            print()
+            save_dir = call_preprocessing_steps(config, this_rosbag)
+            if not save_dir is None:
+                plot_overlap(config, source_dir=save_dir)
+                continue
 
     return
 

@@ -112,6 +112,9 @@ class _DatasetsConfig:
         8  # Convolution size for bright spots detection and arc projections
     )
 
+    train_ratio: float = 0.8
+    val_ratio: float = 1 - train_ratio
+
     # Train configuration
     batch_size: int = 8  #                        # Training batch size
     num_workers: int = 8  #                       # Training number of workers

@@ -117,7 +117,7 @@ class SonarDatum:
         image: "_FloatIterable",
         pose: "_CameraPoseLike",
         params: "_CameraParamsLike",
-        stamp: int = -1, # -1 is an invalid stamp and stands for "undefined"
+        stamp: int = -1,  # -1 is an invalid stamp and stands for "undefined"
     ) -> None:
         self.image = torch.as_tensor(image)
         assert self.image.ndim == 3
@@ -130,8 +130,6 @@ class SonarDatum:
         return f"{type(self).__name__}({', '.join(fieldreprs)})"
 
 
-
-
 @dataclass(init=False)
 class SonarDatumPair:
     """
@@ -142,7 +140,7 @@ class SonarDatumPair:
     image2: torch.Tensor  # (H,W,C)
     pose1: CameraPose
     pose2: CameraPose
-    params1: CameraParams
+    params1: CameraParams  # TODO: remove one param as we can not have different ones
     params2: CameraParams
 
     def __init__(self, sonar1: "_SonarDatumLike", sonar2: "_SonarDatumLike") -> None:
