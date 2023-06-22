@@ -429,6 +429,41 @@ def match_keypoints_2d(
     )
 
 
+def _sanity_check_kp1_uv(kp1_uv: torch.Tensor, cell: int, H: int, W: int) -> None:
+    """
+    Check whether the values of kp1_uv are arranged according to a meshgrid.
+
+    """
+    # Check dim
+    _, C, _, _ = kp1_uv.shape
+    assert C == 2
+
+    # Use only first batch item
+    uv0 = kp1_uv[0]
+
+    # Get index
+    idx = (uv0 // cell).long().flatten(1)
+    idx[0] = idx[0].clip(0, H - 1)
+    idx[1] = idx[1].clip(0, W - 1)
+
+    # Reconstruct uv0 using the index
+    uv0_rec = uv0.movedim(0, 2)[tuple(idx)]
+
+    # Check if allclose
+    msg = (
+        "The original keypoints are not ordered according to a meshgrid. "
+        "This means that the concept of rounding (converting to int) does not "
+        "represent the index of itself."
+    )
+    torch.testing.assert_close(
+        # fmt: off
+        uv0.flatten(1).t(), uv0_rec,
+        equal_nan=True, msg=msg,
+        # Set a very high tolerance as the keypoints do not always land on themselves
+        rtol=3 * cell, atol=3 * cell,
+    )
+
+
 def match_keypoints_2d_batch(
     kp1_uv: torch.Tensor,
     kp2_uv_proj: torch.Tensor,
@@ -490,6 +525,8 @@ def match_keypoints_2d_batch(
     B, D, C, H, W = kp2_uv_proj.shape
     assert C == 2
     assert kp1_uv.device == kp2_uv_proj.device
+    _sanity_check_kp1_uv(kp1_uv, convolution_size, H, W)
+
     # Permute dimensions for nicer data handling
     kp1_uv = kp1_uv.permute(0, 2, 3, 1)  # (B,H,W,2)
     kp2_uv_proj = kp2_uv_proj.view(B, D, C, H * W).permute(0, 3, 1, 2)  # (B,H*W,D,2)

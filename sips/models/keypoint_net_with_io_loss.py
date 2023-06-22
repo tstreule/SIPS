@@ -306,8 +306,9 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # 1) Keypoint/Localization loss
         # Note that we select `source_uv_warp` as the closest warped coordinate points
         _, source_uv_warp, min_distance, amin_distance, mask = match_keypoints_2d_batch(
-            target_uv_pred,
-            source_uv_warp_all,
+            # transpose such that the keypoints are ordered according to a proper meshgrid
+            target_uv_pred.mT.contiguous(),
+            source_uv_warp_all.mT.contiguous(),
             self.keypoint_net.cell,
             self.epsilon_uv,
             allow_multi_match=True,

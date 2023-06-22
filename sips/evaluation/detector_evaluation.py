@@ -119,8 +119,13 @@ def compute_repeatability_batch(
     coord_2 = coord_2.masked_fill(mask_2, torch.nan)
 
     # Compute minimum distances
-    _, _, min1, _, _ = match_keypoints_2d_batch(coord_1, coord_2_proj, cell, torch.inf)
-    _, _, min2, _, _ = match_keypoints_2d_batch(coord_2, coord_1_proj, cell, torch.inf)
+    # transpose such that the keypoints are ordered according to a proper meshgrid
+    _, _, min1, _, _ = match_keypoints_2d_batch(
+        coord_1.mT.contiguous(), coord_2_proj.mT.contiguous(), cell, torch.inf
+    )
+    _, _, min2, _, _ = match_keypoints_2d_batch(
+        coord_2.mT.contiguous(), coord_1_proj.mT.contiguous(), cell, torch.inf
+    )
 
     # Compute repeatability
     n1s: list[int] = []
