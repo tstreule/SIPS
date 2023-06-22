@@ -1,5 +1,7 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
+from typing import Callable
+
 import torch
 import torch.nn.functional as F
 
@@ -120,9 +122,13 @@ class KeypointNet(torch.nn.Module):
         self.cell = 8
         self.upsample = torch.nn.PixelShuffle(upscale_factor=2)
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # --------------------------------------------------------------------------
+    # Prediction
+
+    _forward_return_type = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    __call__: Callable[..., _forward_return_type]
+
+    def forward(self, x: torch.Tensor) -> _forward_return_type:
         """
         Processes a batch of images.
 
@@ -139,6 +145,7 @@ class KeypointNet(torch.nn.Module):
             Keypoint coordinates (B, 2, H_out, W_out)
         feat: torch.Tensor
             Keypoint descriptors (B, 256, H_out, W_out)
+
         """
         B, _, H, W = x.shape
 

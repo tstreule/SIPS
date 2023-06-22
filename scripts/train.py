@@ -35,7 +35,13 @@ def _set_debug(debug: bool):
     torch._dynamo.config.verbose = True  # type: ignore[attr-defined]
 
 
-def _torch_compile(model: KeypointNetwithIOLoss, **kwargs) -> KeypointNetwithIOLoss:
+def _torch_compile(
+    model: KeypointNetwithIOLoss, accelerator: str, **kwargs
+) -> KeypointNetwithIOLoss:
+    if accelerator == "mps":
+        # `torch.compile()` cannot handle MPS yet
+        return model
+
     # NOTE: Ideally we would call `model = torch.compile(model)` and add a
     #  `@torch.compile(dynamic=True)` decorator to the
     #  `sips.utils.match_keypoints_2d_batch` function.
@@ -57,7 +63,7 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
 
     # Initialize model and data module
     model = KeypointNetwithIOLoss.from_config(config.model)
-    model = _torch_compile(model)
+    model = _torch_compile(model, config.arch.accelerator)
     dm = SonarDataModule(config.datasets)
 
     # Initialize callbacks

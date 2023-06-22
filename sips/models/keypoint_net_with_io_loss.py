@@ -1,6 +1,6 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
-from typing import Literal
+from typing import Callable, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -259,12 +259,14 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         }
         return [optimizer], [lr_scheduler]
 
-    def forward(
-        self, batch: SonarBatch
-    ) -> tuple[
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ]:
+    # --------------------------------------------------------------------------
+    # Prediction
+
+    _pred_out_type = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    _forward_return_type = tuple[_pred_out_type, _pred_out_type]
+    __call__: Callable[..., _forward_return_type]
+
+    def forward(self, batch: SonarBatch) -> _forward_return_type:
         # Normalize images and (optional) 1D -> 3D
         image1 = to_color_normalized(batch.image1.clone())
         image2 = to_color_normalized(batch.image2.clone())
@@ -278,11 +280,14 @@ class KeypointNetwithIOLoss(pl.LightningModule):
 
         return target, source
 
+    # --------------------------------------------------------------------------
+    # Loss
+
     def _get_loss_recall(
         self,
         batch: SonarBatch,
-        target_out: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-        source_out: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        target_out: _pred_out_type,
+        source_out: _pred_out_type,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Convenience function since train/valid/test steps are similar.
@@ -423,7 +428,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 dim=2,
             )
 
-            inlier_pred: torch.Tensor = self.io_net(
+            inlier_pred = self.io_net(
                 point_pair.permute(0, 2, 1).unsqueeze(3)
             ).squeeze()
 
@@ -457,7 +462,10 @@ class KeypointNetwithIOLoss(pl.LightningModule):
 
         return loss_2d, recall_2d
 
-    def training_step(self, batch: SonarBatch, batch_idx: int):
+    # --------------------------------------------------------------------------
+    # Train, test and validation
+
+    def training_step(self, batch: SonarBatch, batch_idx: int) -> torch.Tensor:
         target_out, source_out = self(batch)
         loss, recall = self._get_loss_recall(batch, target_out, source_out)
 

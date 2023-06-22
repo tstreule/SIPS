@@ -1,5 +1,7 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
+from typing import Callable
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -215,9 +217,13 @@ class KeypointResnet(torch.nn.Module):
         self.cross_ratio = 2.0
         self.cell = 8
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # --------------------------------------------------------------------------
+    # Prediction
+
+    _forward_return_type = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    __call__: Callable[..., _forward_return_type]
+
+    def forward(self, x: torch.Tensor) -> _forward_return_type:
         B, _, H, W = x.shape
 
         x_: list[torch.Tensor] = self.encoderK(x)

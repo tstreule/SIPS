@@ -1,5 +1,7 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
+from typing import Callable
+
 import torch
 import torch.nn.functional as F
 
@@ -37,6 +39,11 @@ class InlierNet(torch.nn.Module):
 
         # output are 1D sampling weights (log probabilities)
         self.p_out = torch.nn.Conv2d(128, 1, 1, 1, 0)
+
+    # --------------------------------------------------------------------------
+    # Prediction
+
+    __call__: Callable[..., torch.Tensor]
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         x = inputs
