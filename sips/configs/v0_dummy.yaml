@@ -24,19 +24,8 @@ wandb:
   dry_run: True
 
 datasets:
-  rosbags: ["freeRoaming15SonarFeSteg-0805.bag"]
-  # rosbags: ["freeRoaming15SonarFels-0805.bag",
-  #           "freeRoaming15SonarFels2-0805.bag", 
-  #           "freeRoaming15Sonar2-0805.bag", 
-  #           "freeRoaming15SonarAuto-0805.bag", 
-  #           "freeRoaming1-0805.bag",
-  #           "freeRoaming15-0805.bag",
-  #           "freeRoaming15Sonar-0805.bag",
-  #           "freeRoaming15SonarFeSteg-0805.bag",
-  #           "freeRoaming45deg-0805.bag",
-  #           "freeRoamingEndGtsam.bag",
-  #           "sonarRecordingFull_gtsam.bag"]  
+  rosbags: ["agisoft8.bag"]
   n_elevations: 5     
-  image_filter_threshold: 0.92 
+  image_filter_threshold: 0.95 
   image_filter: "gaussian"
   bright_spots_threshold: 210

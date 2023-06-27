@@ -6,6 +6,8 @@ from pathlib import Path
 from sips.configs.base_config import _DatasetsConfig
 
 
+# Add entry to summary.json file of this rosbag. If this configuration was looked
+# at before just return its configuration number, else create new entry.
 def add_entry_to_summary(config: _DatasetsConfig, rosbag: str | Path) -> int:
     save_dir = Path("data/filtered") / Path(rosbag).with_suffix("")
     variable_config_params = config.get_variable_params()
@@ -37,6 +39,7 @@ def add_entry_to_summary(config: _DatasetsConfig, rosbag: str | Path) -> int:
         return int(config_num)
 
 
+# Find the configuration number according to this configuration
 def find_config_num(config, source_dir) -> int:
     try:
         with open(source_dir / "summary.json", "r") as f:

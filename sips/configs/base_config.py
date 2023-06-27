@@ -82,6 +82,8 @@ class _ModelConfig:
 
 @dataclass
 class _DatasetsConfig:
+    seed: int = 42  #                        # Random seed
+
     # Rosbags to consider
     rosbags: list[str] = field(default_factory=list)
 
@@ -121,6 +123,7 @@ class _DatasetsConfig:
     path: str = "/data/datasets/"  #              # Training data path
     repeat: int = 1  #                            # Number of times training dataset is repeated per epoch
 
+    # Return all parameters of this config that can be tuned
     def get_variable_params(self) -> dict[str, float | int | str | None]:
         variable_params = {
             "image_filter": self.image_filter,

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, random_split
 from scripts import preprocess_data
 from sips.configs.base_config import _DatasetsConfig
 from sips.data import CameraParams, CameraPose, SonarBatch, SonarDatum, SonarDatumPair
-from sips.data_extraction.preprocessing import call_preprocessing_steps
+from sips.data_extraction.init_preprocessing import call_preprocessing_steps
 from sips.datasets.dataset import DummySonarDataSet, SonarDataset
 
 
@@ -27,16 +27,15 @@ class SonarDataModule(pl.LightningDataModule):
 
     def prepare_data(self) -> None:
         """
-        Download, split, etc... data
+        Run all preprocessing steps for the provided rosbags and configuration
+        if not already done before. Combine the poses and tuple timestamps from
+        all rosbags.
 
         Notes
         -----
         Only called on 1 GPU/TPU in distributed
 
         """
-
-        # MS: combine all the datapoints of valid bags (i.e. those that have enough data)
-        # randomize order and store in folder according to config of this module
         rosbags = self.config.rosbags
         poses: dict[int, dict[str, dict[str, float] | int | str]] = {}
         tuples: list[tuple[int, int]] = []
@@ -98,7 +97,6 @@ class SonarDataModule(pl.LightningDataModule):
             dataset, [self.config.train_ratio, self.config.val_ratio]
         )
 
-        # MS: include test loader as well
         self.data_train = SonarDataset(self.config, train_set)
         self.data_val = SonarDataset(self.config, val_set)
 

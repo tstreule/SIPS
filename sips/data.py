@@ -140,7 +140,7 @@ class SonarDatumPair:
     image2: torch.Tensor  # (H,W,C)
     pose1: CameraPose
     pose2: CameraPose
-    params1: CameraParams  # TODO: remove one param as we can not have different ones
+    params1: CameraParams  # TODO: (optionally) remove one param as we can not have different ones
     params2: CameraParams
 
     def __init__(self, sonar1: "_SonarDatumLike", sonar2: "_SonarDatumLike") -> None:

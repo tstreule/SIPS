@@ -11,8 +11,6 @@ from sips.data import CameraParams, CameraPose, SonarBatch, SonarDatum, SonarDat
 
 
 class SonarDataset(Dataset[SonarDatumPair]):
-    # TODO: Implement
-
     def __init__(self, config, mask=[]) -> None:
         super().__init__()
         self.config = config
@@ -50,8 +48,7 @@ class SonarDataset(Dataset[SonarDatumPair]):
         self, index
     ) -> (
         SonarDatumPair
-    ):  # TODO: guarantee that there is no none or handle the errors below
-        # img = Image.open(self.paths[index]).convert("RGB")
+    ):  
         this_tuple = self.tuples[index]
         pose_data0 = self.poses[str(this_tuple[0])]
         pose_data1 = self.poses[str(this_tuple[1])]

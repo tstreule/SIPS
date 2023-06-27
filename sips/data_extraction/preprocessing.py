@@ -6,288 +6,87 @@ from json import JSONDecodeError
 from pathlib import Path
 from warnings import warn
 
-import cv2  # type: ignore
 import numpy as np
-import numpy.typing as npt
 import torch
-import torchvision.transforms as T
-from matplotlib import pyplot as plt
-from PIL import Image, ImageFilter
+from PIL import Image
 from rosbags.rosbag1 import Reader
 from rosbags.rosbag1.reader import ReaderError
 from rosbags.serde import deserialize_cdr, ros1_to_cdr
 from rosbags.typesys import get_types_from_msg, register_types
 from rosbags.typesys.types import sensor_msgs__msg__Image as ImageMessage
 from scipy.interpolate import interp1d
-from torch import nn
 from tqdm import tqdm
 
 from sips.configs.base_config import _DatasetsConfig
 from sips.data import CameraParams, CameraPose, SonarDatum
-from sips.data_extraction.utils.handle_configs import (
-    add_entry_to_summary,
-    find_config_num,
+from sips.data_extraction.image_filter import RedundantImageFilter
+from sips.data_extraction.utils.handle_configs import add_entry_to_summary
+from sips.data_extraction.utils.image_operations import (
+    blur_image,
+    find_bright_spots,
+    image_to_tensor,
 )
-from sips.utils.keypoint_matching import _unravel_index_2d
-from sips.utils.point_projection import warp_image, warp_image_batch
-
-# ==============================================================================
-# Sonar image handling
-
-
-def cosine_similarity(frame_normalized_1, frame_normalized_2) -> float:
-    return np.sum(frame_normalized_1 * frame_normalized_2)
-
-
-class RedundantImageFilter:
-    """
-    For filtering images that look too similar.
-    """
-
-    def __init__(
-        self,
-        blur: str | None = "gaussian",
-        blur_size: float = 5,
-        blur_std: float = 2.5,
-        threshold: float = 0.95,
-    ) -> None:
-        # Some constants with values that will probably need some tuning
-        assert blur in [None, "gaussian", "median", "bilateral"]
-        assert 0 <= threshold <= 1, "Threshold must be within [0, 1]"
-        self.blur = blur
-        self.blur_size = blur_size
-        self.blur_std = blur_std
-        self.threshold = threshold  # Higher values will save more data, where 1.0 saves everything and 0.0 saves nothing.
-
-        self.n_saved = 0
-        self.n_redundant = 0
-        self.current_frame_norm: npt.NDArray[np.float_] | None = None
-
-    # TODO: adjust this such that it stores all images and keeps record of which images would
-    # "survive" the filtering
-    def image_redundant(
-        self, message: ImageMessage, save_path: str | Path, save_ims: bool
-    ) -> bool:
-        keyframe = message.data.reshape((message.height, message.width))
-        if save_ims:
-            Image.fromarray(keyframe, mode="L").save(save_path)
-
-        # Skip if image is redundant
-        if self._is_keyframe_redundant(keyframe):
-            self.n_redundant += 1
-            return True
-
-        # Save image
-        self.n_saved += 1
-        return False
-
-    def _is_keyframe_redundant(self, frame: npt.NDArray[np.uint8]) -> bool:
-        # Subsample the frame to a lower resolution for the sake of filtering
-        frame_resized: npt.NDArray[np.uint8] = cv2.resize(frame, (512, 512))  # type: ignore
-
-        # Blur the frame to prevent high frequency sonar noise to influence the frame
-        # content distance measurements.  For reference on different blurring methods
-        # see https://docs.opencv.org/4.x/d4/d13/tutorial_py_filtering.html
-        frame_blurred: npt.NDArray[np.uint8]
-        if self.blur is None:
-            frame_blurred = frame_resized
-        elif self.blur == "gaussian":
-            frame_blurred = cv2.GaussianBlur(
-                frame_resized, (self.blur_size, self.blur_size), self.blur_std
-            )
-        elif self.blur == "median":
-            frame_blurred = cv2.medianBlur(frame_resized, self.blur_size)
-        elif self.blur == "bilateral":
-            frame_blurred = cv2.bilateralFilter(frame_resized, 9, 75, 75)
-        else:
-            raise ValueError(f"Invalid blur type '{self.blur}'")
-
-        # L2 normalization of the frame as a vector, to prepare for cosine similarity
-        frame_norm = frame_blurred / np.linalg.norm(frame_blurred)
-        if (
-            self.current_frame_norm is None
-            or cosine_similarity(self.current_frame_norm, frame_norm) < self.threshold
-        ):
-            # Frame is not redundant
-            self.current_frame_norm = frame_norm
-            return False
-        else:
-            # Frame is redundant
-            return True
-
-
-def check_preprocessing_status(
-    config_num: int, source_dir: str | Path
-) -> tuple[bool, bool, bool, bool, bool, bool]:
-    if config_num == -1:
-        return (False, False, False, False, False, False)
-    source_dir = source_dir / Path(str(config_num))
-    try:
-        with open(source_dir / "info.json", "r") as f:
-            info = json.load(f)
-    except IOError:  # File is missing
-        return (False, False, False, False, False, False)
-    except JSONDecodeError:  # File is empty
-        return (False, False, False, False, False, False)
-    (
-        conns_checked,
-        data_extracted,
-        data_matched,
-        data_filtered,
-        overlap_calculated,
-        failed,
-    ) = (
-        False,
-        False,
-        False,
-        False,
-        False,
-        False,
-    )
-    if "failed" in info:
-        return (
-            conns_checked,
-            data_extracted,
-            data_matched,
-            data_filtered,
-            overlap_calculated,
-            True,
-        )
-    # Only check if the keys are available, if they are then
-    # the process was run before and does not need to be repeated
-    if "rosbag_connections_and_topics" in info:
-        # if len(info["rosbag_connections_and_topics"]) > 0:
-        conns_checked = True
-    if (
-        "num_extracted_sonar_datapoints" in info
-        and "num_extracted_pose_datapoints" in info
-    ):
-        # if (
-        #    info["num_extracted_sonar_datapoints"] > 0
-        #    and info["num_extracted_pose_datapoints"] > 0
-        # ):
-        data_extracted = True
-    if "num_matched_datapoints" in info:
-        # if info["num_matched_datapoints"] > 0:
-        data_matched = True
-    if "num_datapoints_after_filtering" in info:
-        # if info["num_datapoints_after_filtering"] > 0:
-        data_filtered = True
-    if "num_tuples" in info:
-        overlap_calculated = True
-    return (
-        conns_checked,
-        data_extracted,
-        data_matched,
-        data_filtered,
-        overlap_calculated,
-        failed,
-    )
-
-
-def call_preprocessing_steps(config: _DatasetsConfig, rosbag: str) -> None | str | Path:
-    source_dir = Path("data/filtered") / Path(rosbag).with_suffix("")
-    config_num = find_config_num(config, source_dir)
-    (
-        conns_checked,
-        data_extracted,
-        data_matched,
-        data_filtered,
-        overlap_calculated,
-        failed,
-    ) = check_preprocessing_status(config_num, source_dir)
-    if failed:
-        warn("This config failed in previous run, skipping the rest of the operations")
-        return None
-    if not (
-        conns_checked
-        and data_extracted
-        and data_matched
-        and data_filtered
-        and overlap_calculated
-    ):
-        dataextraction = Preprocessor(config, rosbag)
-        conns_checked = dataextraction.check_connections()
-        if conns_checked:
-            data_extracted = dataextraction.extract_data()
-            if data_extracted:
-                data_matched = dataextraction.match_data()
-                if data_matched:
-                    data_filtered = dataextraction.filter_data()
-                    if data_filtered:
-                        overlap_calculated = dataextraction.calculate_overlap()
-    else:
-        print(
-            "Data has been preprocessed in previous run, skipping the rest of the operations"
-        )
-    config_num = find_config_num(config, source_dir)
-    save_dir = source_dir / str(config_num)
-
-    # Failed at some stage
-    if not (
-        conns_checked
-        and data_extracted
-        and data_matched
-        and data_filtered
-        and overlap_calculated
-    ):
-        with open(save_dir / "info.json", "r") as f:
-            try:
-                info = json.load(f)
-            except JSONDecodeError:
-                info = {}
-        with open(save_dir / "info.json", "w") as f:
-            info["failed"] = True
-            json.dump(info, f, indent=2)
-        return None
-    return save_dir
+from sips.utils.point_projection import warp_image_batch
 
 
 class Preprocessor:
     """
-    Extract, match and filter the data
+    Extract, match and filter the data and create (pose, sonar image) tuples
     """
 
     def __init__(self, config: _DatasetsConfig, rosbag: str | Path) -> None:
-        self.rosbag = rosbag
-        self.rosbag_path = Path("data/raw") / rosbag
-        self.save_dir = Path("data/filtered") / Path(rosbag).with_suffix("")
-        self.image_save_dir = self.save_dir / "images"
-        self.image_filter_params: dict[str, float | str | None] = {
+        self.rosbag = rosbag  # rosbag name of form <rosbag-name>.bag
+        self.rosbag_path = Path("data/raw") / rosbag  # path to the raw rosbag data
+        self.save_dir = Path("data/filtered") / Path(rosbag).with_suffix(
+            ""
+        )  # path where to store data
+        self.image_save_dir = self.save_dir / "images"  # path where to store image data
+        self.image_filter_params: dict[
+            str, float | str | None
+        ] = {  # redundant image filter params
             "blur": config.image_filter,
             "blur_size": config.image_filter_size,
             "blur_std": config.image_filter_std,
             "threshold": config.image_filter_threshold,
         }
-        self.sonar_params: dict[str, float] = {
+        self.sonar_params: dict[str, float] = {  # sonar configuration params
             "horizontal_fov": config.horizontal_fov,
             "vertical_fov": config.vertical_fov,
             "max_range": config.max_range,
             "min_range": config.min_range,
         }
-        self.conv_size = config.conv_size
-        self.bs_threshold = config.bright_spots_threshold
-        self.n_elevations = config.n_elevations
-        self.overlap_threshold = config.overlap_ratio_threshold
-        self.im_shape = config.image_shape
+        self.conv_size = config.conv_size  # Convolution size for bright spot detection
+        self.bs_threshold = (
+            config.bright_spots_threshold
+        )  # Bright spot detection threshold
+        self.n_elevations = (
+            config.n_elevations
+        )  # Number of elevation for pixel projection between images
+        self.overlap_threshold = (
+            config.overlap_ratio_threshold
+        )  # Threshold for ratio of image overlap
+        self.im_shape = config.image_shape  # image shape
 
-        self.poses: list[dict[str, int | dict[str, float] | list[float]]] = []
+        self.all_poses: list[
+            dict[str, int | dict[str, float] | list[float]]
+        ] = []  # Pose data
         self.unfiltered_poses: list[
             dict[str, int | dict[str, float] | list[float]]
-        ] = []
-        self.sonar_images: dict[int, ImageMessage] = {}
-        self.sonar_datum: list[SonarDatum] = []
-        self.tuple_stamps: list[tuple[int, int]] = []
+        ] = []  # Remaining pose data after filtering
+        self.sonar_images: dict[
+            int, ImageMessage
+        ] = {}  # Sonar images, keyed by timestamp
+        self.tuple_stamps: list[
+            tuple[int, int]
+        ] = []  # timestamps of tuples with sufficient overlap
 
-        self.rosbag_connections: list[str] = []
-        self.num_extracted_sonar = 0
-        self.num_extracted_pose = 0
-        self.num_matched_datapoints = 0
-        self.num_datapoints_after_filtering = 0
+        self.num_matched_datapoints = (
+            0  # Number of datapoints after matching pose and sonar data
+        )
 
+        # Define Sonar configuration message
         with open("sips/data_extraction/misc/SonarConfiguration.msg", "r") as f:
             SONAR_CONFIGURATION_MSG = f.read()
-
         register_types(
             get_types_from_msg(
                 SONAR_CONFIGURATION_MSG,
@@ -299,6 +98,8 @@ class Preprocessor:
         )
 
         self.save_dir.mkdir(exist_ok=True, parents=True)
+        # Find configuration number for this rosbag and config combination and create
+        # folder structure for it.
         config_num = add_entry_to_summary(config, rosbag)
         if config_num == -1:
             warn(
@@ -315,6 +116,10 @@ class Preprocessor:
         key: str,
         value: int | list[str] | dict[str, float | str | None] | dict[str, float],
     ) -> None:
+        """
+        Write number of results of each step to corresponding info.json file
+
+        """
         with open(self.this_config_save_dir / "info.json", "r") as f:
             try:
                 info = json.load(f)
@@ -325,59 +130,23 @@ class Preprocessor:
             json.dump(info, f, indent=2)
         return
 
-    # ==============================================================================
-    # Match interpolated pose data with sonar timestamps
-
-    def _match_pose_data(self, sonar_stamps, poses):
-        pose_interp = self._make_pose_interpolator(poses)
-        pose_data_matched = []
-        for sonar_stamp in tqdm(sonar_stamps):
-            interpolated_pose = pose_interp(sonar_stamp)
-            pose: dict[str, int | dict[str, float]] = {
-                "timestamp": sonar_stamp,  # type: ignore
-                "point_position": {
-                    "x": interpolated_pose[0],
-                    "y": interpolated_pose[1],
-                    "z": interpolated_pose[2],
-                },
-                "quaterion_orientation": {
-                    "x": interpolated_pose[3],
-                    "y": interpolated_pose[4],
-                    "z": interpolated_pose[5],
-                    "w": interpolated_pose[6],
-                },
-                "covariance": interpolated_pose[7:].tolist(),
-            }
-            pose_data_matched.append(pose)
-        return pose_data_matched
-
-    # ==============================================================================
-    # Interpolators for both sonar and twist data
-
-    def _make_pose_interpolator(
-        self, poses: list[dict[str, int | dict[str, float]]]
-    ) -> interp1d:
-        timestamps = [pose["timestamp"] for pose in poses]
-
-        # Alternatively you can write the following when you want the timestamps in seconds
-        # timestamps = [pose["timestamp"] * 1e-9 for pose in poses]
-        locations = np.array(
-            [[pose["point_position"][key] for key in "xyz"] for pose in poses]  # type: ignore
-        ).T
-        quaternions = np.array(
-            [[pose["quaterion_orientation"][key] for key in "xyzw"] for pose in poses]  # type: ignore
-        ).T
-        covariances = np.array([pose["covariance"] for pose in poses]).T
-        return interp1d(
-            timestamps, np.concatenate([locations, quaternions, covariances], axis=0)
-        )
-
-    # TODO: check if pose recording frequency and other recording parameters are correct
     def check_connections(self) -> bool:
+        """
+        Go through all available connections of current bag
+
+        Connections for pose data, sonar images and sonar configuration have to be available
+
+        Returns
+        -------
+        bool, indicating success of operations
+
+        """
         sonar_topic = "/proteus_PRA01/sonar_0/image"
         pose_topic = "/proteus_PRA01/gtsam/pose"
+        sonar_config_topic = "/proteus_PRA01/sonar_0/configuration"
         sonar_topic_available = False
         pose_topic_available = False
+        sonar_config_topic_available = False
         rosbag_connections: list[str] = []
         try:
             with Reader(self.rosbag_path) as reader:
@@ -386,6 +155,8 @@ class Preprocessor:
                         sonar_topic_available = True
                     elif connection.topic == pose_topic:
                         pose_topic_available = True
+                    elif connection.topic == sonar_config_topic:
+                        sonar_config_topic_available = True
                     rosbag_connections.append(
                         f"{connection.topic} {connection.msgtype}"
                     )
@@ -397,17 +168,36 @@ class Preprocessor:
                 "Sonar topic and/or pose topic is missing within this bag, skipping the rest of the operations"
             )
             return False
+        if not sonar_config_topic_available:
+            warn(
+                "Sonar configuration topic is missing within this bag, skipping the rest of the operations"
+            )
+            return False
 
         self._update_info("rosbag_connections_and_topics", rosbag_connections)
-        self.rosbag_connections = rosbag_connections
         return True
 
-    # TODO: check if the sonar configuration parameters match the once given in the config
-    # if not given, ignore and if not matching throw a warning as they should be consistent
-    # for the model to get sonar images of the same type
+    # ==============================================================================
+    # Data extraction
+
     def extract_data(self) -> bool:
+        """
+        Extract data from current rosbag file
+
+        Checks that pose data, sonar imagery data and sonar configuration data is available and applicable.
+        For sonar configuration we only keep data if it matches sonar configuration of given config file.
+        Pose data has to have a low frequency (4Hz) as higher frequencies lead to lower accuracy coming
+        from measuring drift. Sonar images are only saved after we saw first pose datapoint to improve
+        the accuracy of later interpolation steps.
+
+
+        Returns
+        -------
+        bool, indicating success of operations
+
+        """
         print(f"Extract data")
-        # Read data from rosbag file
+
         try:
             with Reader(self.rosbag_path) as reader:
                 # --------
@@ -444,10 +234,8 @@ class Preprocessor:
                     for x in reader.connections
                     if x.topic in [sonar_topic, pose_topic, sonar_config_topic]
                 ]
-                config_msgs = []  # TODO: remove this again, only used for some tests
                 first_pose_seen = False
                 for connection, timestamp, rawdata in reader.messages(connections):
-                    # Read image message and save
                     msg = deserialize_cdr(
                         ros1_to_cdr(rawdata, connection.msgtype), connection.msgtype
                     )
@@ -456,6 +244,7 @@ class Preprocessor:
                         connection.msgtype == "sensor_msgs/msg/Image"
                         and first_pose_seen
                     ):
+                        # msg contains sonar image
                         timestamp = int(
                             f"{msg.header.stamp.sec}{msg.header.stamp.nanosec:09}"
                         )
@@ -465,11 +254,14 @@ class Preprocessor:
                         connection.msgtype
                         == "geometry_msgs/msg/PoseWithCovarianceStamped"
                     ):
+                        # msg contains pose data
                         first_pose_seen = True
                         pp = msg.pose.pose.position
                         po = msg.pose.pose.orientation
                         pose: dict[str, int | dict[str, float] | list[float]] = {
-                            "timestamp": int(f"{msg.header.stamp.sec}{msg.header.stamp.nanosec:09}"),  # type: ignore
+                            "timestamp": int(
+                                f"{msg.header.stamp.sec}{msg.header.stamp.nanosec:09}"
+                            ),
                             "point_position": {"x": pp.x, "y": pp.y, "z": pp.z},
                             "quaterion_orientation": {
                                 "x": po.x,
@@ -479,27 +271,21 @@ class Preprocessor:
                             },
                             "covariance": msg.pose.covariance.tolist(),
                         }
-                        self.poses.append(pose)
-
-                    # TODO: sonar_params should be initialized through the config file
-                    # if the params do not coincide with them throw a warning
-                    # should probably continue with the operation and save data whenever
-                    # the sonar params match the ones from the config again, but seems
-                    # cumbersome
+                        self.all_poses.append(pose)
 
                     if (
                         connection.msgtype
                         == "sonar_driver_interfaces/msg/SonarConfiguration"
                     ):
-                        config_msgs.append(msg)
-                        if (
+                        # msg contains sonar configuration data
+                        if (  # sonar configuration has to match values given in config file
                             self.sonar_params["horizontal_fov"] != msg.horz_fov
                             or self.sonar_params["vertical_fov"] != msg.vert_fov
                             or self.sonar_params["max_range"] != msg.max_range
                             or self.sonar_params["min_range"] != msg.min_range
                         ):
                             warn(
-                                "Sonar parameters do not match the ones given in the config file, skipping the rest of the operations"
+                                "Sonar configuration parameters do not match the ones given in the config file, skipping the rest of the operations"
                             )
                             self._update_info("num_extracted_sonar_datapoints", 0)
                             self._update_info("num_extracted_pose_datapoints", 0)
@@ -509,8 +295,8 @@ class Preprocessor:
                 # we ignore this bag as the accuracy is lower given measurement drifts
                 pose_frequency = 1 / (
                     (
-                        (self.poses[-1]["timestamp"] - self.poses[0]["timestamp"])  # type: ignore
-                        / len(self.poses)
+                        (self.all_poses[-1]["timestamp"] - self.all_poses[0]["timestamp"])  # type: ignore[operator]
+                        / len(self.all_poses)
                     )
                     / 1_000_000_000
                 )
@@ -524,7 +310,7 @@ class Preprocessor:
                     return False
 
                 num_extracted_sonar = len(self.sonar_images)
-                num_extracted_pose = len(self.poses)
+                num_extracted_pose = len(self.all_poses)
                 if num_extracted_pose <= 0 or num_extracted_sonar <= 0:
                     warn(
                         "No pose and/or sonar data extracted, skipping the rest of the operations"
@@ -541,18 +327,88 @@ class Preprocessor:
                 print()
                 self._update_info("num_extracted_sonar_datapoints", num_extracted_sonar)
                 self._update_info("num_extracted_pose_datapoints", num_extracted_pose)
-                self.num_extracted_sonar = num_extracted_sonar
-                self.num_extracted_pose = num_extracted_pose
                 return True
         except ReaderError:
             warn("Rosbag file missing, skipping the rest of the operations")
         return False
 
+    # ==============================================================================
+    # Pose and sonar datapoint matching
+
+    def _make_pose_interpolator(
+        self, poses: list[dict[str, int | dict[str, float] | list[float]]]
+    ) -> interp1d:
+        """
+        Create the interpolator based on all pose data
+
+        """
+        timestamps = [pose["timestamp"] for pose in poses]
+
+        locations = np.array(
+            [[pose["point_position"][key] for key in "xyz"] for pose in poses]  # type: ignore
+        ).T
+        quaternions = np.array(
+            [[pose["quaterion_orientation"][key] for key in "xyzw"] for pose in poses]  # type: ignore
+        ).T
+        covariances = np.array([pose["covariance"] for pose in poses]).T
+        return interp1d(
+            timestamps, np.concatenate([locations, quaternions, covariances], axis=0)
+        )
+
+    def _interpolate_pose_data(
+        self,
+        sonar_stamps: list[int],
+        poses: list[dict[str, int | dict[str, float] | list[float]]],
+    ):
+        """
+        Given the timestamps of the sonar datapoints, find interpolated poses for the timestamps
+
+        Parameters
+        ----------
+        sonar_stamps: all timestamps of the remaining sonar data from this bag
+        poses: all pose datapoints, needed to create interpolator
+
+        Returns
+        ----------
+        pose_data_matched : list[dict[str, int | dict[str, float] | list[float]]]
+            interpolated poses according to the sonar timestamps
+
+        """
+        pose_interp = self._make_pose_interpolator(poses)
+        pose_data_matched = []
+        for this_sonar_stamp in tqdm(sonar_stamps):
+            interpolated_pose = pose_interp(this_sonar_stamp)
+            pose: dict[str, int | dict[str, float]] = {
+                "timestamp": this_sonar_stamp,
+                "point_position": {
+                    "x": interpolated_pose[0],
+                    "y": interpolated_pose[1],
+                    "z": interpolated_pose[2],
+                },
+                "quaterion_orientation": {
+                    "x": interpolated_pose[3],
+                    "y": interpolated_pose[4],
+                    "z": interpolated_pose[5],
+                    "w": interpolated_pose[6],
+                },
+                "covariance": interpolated_pose[7:].tolist(),
+            }
+            pose_data_matched.append(pose)
+        return pose_data_matched
+
     def match_data(
         self,
-    ) -> (
-        bool
-    ):  # TODO: kind of a nameclash with function above that also includes "match" -> change one
+    ) -> bool:
+        """
+        For each sonar datapoint we interpolate a pose datapoint at the same timestamp.
+        Remove sonar data after last pose datapoint to improve the accuracy of the
+        interpolation.
+
+        Returns
+        -------
+        bool, indicating success of operations
+
+        """
         print("Match sonar data with poses through interpolation")
 
         # Read the sonar timestamps in ascending order
@@ -564,12 +420,12 @@ class Preprocessor:
         # to improve accuracy of interpolation. The last sonar datapoint should
         # always happen before the last pose datapoint for the same reason
         assert (
-            self.poses[0]["timestamp"] < sonar_stamps[0]  # type: ignore[operator]
+            self.all_poses[0]["timestamp"] <= sonar_stamps[0]  # type: ignore[operator]
         ), "First sonar datapoint before first pose datapoint"
-        if self.poses[-1]["timestamp"] < sonar_stamps[-1]:  # type: ignore[operator]
+        if self.all_poses[-1]["timestamp"] < sonar_stamps[-1]:  # type: ignore[operator]
             # Last sonar datapoint after last pose datapoint, removing sonar data after last pose datapoint
             for i in range(2, len(sonar_stamps)):
-                if sonar_stamps[-i] <= self.poses[-1]["timestamp"]:  # type: ignore[operator]
+                if sonar_stamps[-i] <= self.all_poses[-1]["timestamp"]:  # type: ignore[operator]
                     sonar_stamps_matched = sonar_stamps[: -i + 1]
                     sonar_stamps_unmatched = sonar_stamps[-i + 1 :]
                     break
@@ -583,7 +439,7 @@ class Preprocessor:
             self._update_info("num_matched_datapoints", len(sonar_stamps_matched))
             return False
         assert (
-            self.poses[-1]["timestamp"] >= sonar_stamps_matched[-1]  # type: ignore[operator]
+            self.all_poses[-1]["timestamp"] >= sonar_stamps_matched[-1]  # type: ignore[operator]
         ), "Last sonar datapoint after last pose datapoint"
 
         # Remove the sonar images that were recorded after the last pose
@@ -594,8 +450,10 @@ class Preprocessor:
         # Create interpolation over all pose and twist datapoints
         # then find interpolated pose and twist datapoint for each
         # sonar timestamp
-        self.poses = self._match_pose_data(sonar_stamps_matched, self.poses)
-        assert len(self.poses) == len(
+        self.all_poses = self._interpolate_pose_data(
+            sonar_stamps_matched, self.all_poses
+        )
+        assert len(self.all_poses) == len(
             self.sonar_images
         ), "length of matched data does not match"
         num_matched_datapoints = len(self.sonar_images)
@@ -605,7 +463,20 @@ class Preprocessor:
         self.num_matched_datapoints = num_matched_datapoints
         return True
 
+    # ==============================================================================
+    # Filter data
+
     def filter_data(self) -> bool:
+        """
+        Filter the sonar data with the redundant image filter. Store all remaining images
+        even the ones filtered out if not done in previous run. Information of what sonar
+        data remains after filtering can be found in pose timestamps.
+
+        Returns
+        -------
+        bool, indicating success of operations
+
+        """
         print("Filter sonar images with redudant image filter")
 
         (self.image_save_dir).mkdir(exist_ok=True)
@@ -615,8 +486,9 @@ class Preprocessor:
         # if no images have been saved for previous configs, save in this run
         save_ims = len(os.listdir(self.image_save_dir)) != self.num_matched_datapoints
 
+        # Store all sonar images and filter out redundant datapoints
         sonar_timestamps = sorted(list(self.sonar_images.keys()))
-        for pose, sonar_timestamp in tqdm(zip(self.poses, sonar_timestamps)):
+        for pose, sonar_timestamp in tqdm(zip(self.all_poses, sonar_timestamps)):
             assert (
                 pose["timestamp"] == sonar_timestamp
             ), "pose timestamp and sonar timestamp not agreeing"
@@ -627,7 +499,9 @@ class Preprocessor:
             )
             if not image_redundant:
                 self.unfiltered_poses.append(pose)
-        assert len(self.unfiltered_poses) == image_filter.n_saved
+        assert (
+            len(self.unfiltered_poses) == image_filter.n_saved
+        ), "number of unfiltered poses not agreeing with number of saved images"
         num_datapoints_after_filtering = len(self.unfiltered_poses)
         if num_datapoints_after_filtering <= 0:
             warn(
@@ -637,11 +511,11 @@ class Preprocessor:
                 "num_datapoints_after_filtering", num_datapoints_after_filtering
             )
             return False
-        # TODO: do we need both?
+
+        # Store the pose data
         with open(self.this_config_save_dir / "unfiltered_pose_data.json", "w") as f:
             json.dump(self.unfiltered_poses, f, indent=2)
-        with open(self.save_dir / "pose_data.json", "w") as f:
-            json.dump(self.poses, f, indent=2)
+
         print(
             f"Number of datapoints after filtering:   {num_datapoints_after_filtering:>7}"
         )
@@ -649,31 +523,14 @@ class Preprocessor:
         self._update_info(
             "num_datapoints_after_filtering", num_datapoints_after_filtering
         )
-        self.num_datapoints_after_filtering = num_datapoints_after_filtering
         print(
             f"Data extraction steps are finished, data can be found in {self.save_dir} and {self.this_config_save_dir}"
         )
         print()
         return True
 
-    def _blurred_tensor(self, im: Image.Image) -> torch.Tensor:
-        transform = T.Compose([T.PILToTensor()])
-        return transform((im.resize(self.im_shape)).filter(ImageFilter.BLUR))
-
-    # Find pixels that are brighter than threshold. Only keep one per 8x8
-    # grid. Return as uv coordinates
-    def _find_bright_spots(self, im: torch.Tensor) -> torch.Tensor:
-        maxpool = nn.MaxPool2d(
-            self.conv_size, stride=self.conv_size, return_indices=True
-        )
-        pool, indices = maxpool(im.to(torch.float))
-        mask = pool > self.bs_threshold
-        masked_indices = indices[mask]
-        row, col = _unravel_index_2d(masked_indices, [4096, 512])
-        bright_spots_temp = torch.column_stack((row, col)).to(torch.float)
-        bright_spots = torch.full((64 * 64, 2), torch.nan)
-        bright_spots[: bright_spots_temp.shape[0], :] = bright_spots_temp
-        return bright_spots.permute(1, 0).view(2, 64, 64)
+    # ==============================================================================
+    # Image overlap
 
     def _overlap_ratio_sufficient(
         self,
@@ -684,6 +541,9 @@ class Preprocessor:
         num_bs1: int,
         num_bs2: int,
     ) -> bool:
+        """
+        Find out if the ratio of overlap of one image pair is above the threshold
+        """
         height, width = sonar_datum1.image.shape[1:]
         assert (
             sonar_datum1.image.shape == sonar_datum2.image.shape
@@ -695,6 +555,7 @@ class Preprocessor:
             [sonar_datum2.params],
             [sonar_datum2.pose],
             (width, height),
+            self.n_elevations,
         )
         bs2_uv_proj = warp_image_batch(
             bs2_uv.unsqueeze(0),
@@ -703,6 +564,7 @@ class Preprocessor:
             [sonar_datum1.params],
             [sonar_datum1.pose],
             (width, height),
+            self.n_elevations,
         )
         num_bs1_proj = (~bs1_uv_proj.isnan()).sum() / 2
         num_bs2_proj = (~bs2_uv_proj.isnan()).sum() / 2
@@ -711,7 +573,25 @@ class Preprocessor:
         return float((ratio1.float() + ratio2.float()) / 2) > self.overlap_threshold
 
     def calculate_overlap(self) -> bool:
+        """
+        Calculate image overlap by projecting bright spots (pixels above brightness
+        threshold) to each other image and only keep tuples that average a ratio above
+        the overlap threshold in terms of number of bright spots that appear after
+        projection.
+
+        Returns
+        -------
+        bool, indicating success of operations
+
+        """
         print("Calculate the image overlap of image pairs")
+
+        if len(self.unfiltered_poses) < 2:
+            warn("Not enough sonar data found, skipping the rest of the operations")
+            return False
+
+        # Create SonarDatum datapoints
+        sonar_datum: list[SonarDatum] = []
         camera_params = CameraParams(
             min_range=self.sonar_params["min_range"],
             max_range=self.sonar_params["max_range"],
@@ -726,7 +606,8 @@ class Preprocessor:
             except FileNotFoundError:
                 warn("Image file not found, skipping the rest of the operations")
                 return False
-            im_tensor = self._blurred_tensor(im)
+            blurred_im = blur_image(im)
+            blurred_im_tensor = image_to_tensor(blurred_im, self.im_shape)
             camera_pose = CameraPose(
                 position=[
                     this_pose["point_position"]["x"],  # type: ignore[call-overload, index]
@@ -740,26 +621,30 @@ class Preprocessor:
                     this_pose["quaterion_orientation"]["w"],  # type: ignore[call-overload, index]
                 ],
             )
-            self.sonar_datum.append(
+            sonar_datum.append(
                 SonarDatum(
-                    image=im_tensor, pose=camera_pose, params=camera_params, stamp=stamp
+                    image=blurred_im_tensor,
+                    pose=camera_pose,
+                    params=camera_params,
+                    stamp=stamp,
                 )
             )
-        if len(self.sonar_datum) < 2:
-            warn("Not enough sonar data found, skipping the rest of the operations")
-            return False
+
+        # Find bright spots
         bright_spots: dict[int, torch.Tensor] = {}
         num_bright_spots: dict[int, int] = {}
-        for sonar_datum in self.sonar_datum:
-            bs_uv = self._find_bright_spots(sonar_datum.image)
-            bright_spots[sonar_datum.stamp] = bs_uv
-            num_bright_spots[sonar_datum.stamp] = int(
+        for this_sonar_datum in sonar_datum:
+            bs_uv = find_bright_spots(
+                this_sonar_datum.image, self.conv_size, self.bs_threshold
+            )
+            bright_spots[this_sonar_datum.stamp] = bs_uv
+            num_bright_spots[this_sonar_datum.stamp] = int(
                 (~bs_uv.isnan()).sum() * self.n_elevations / 2
             )
+
+        # Check the ratio of overlap of each image pair, keep the ones above the threshold
         tuple_stamps: list[tuple[int, int]] = []
-        for sonar_datum1, sonar_datum2 in tqdm(
-            itertools.combinations(self.sonar_datum, 2)
-        ):
+        for sonar_datum1, sonar_datum2 in tqdm(itertools.combinations(sonar_datum, 2)):
             if self._overlap_ratio_sufficient(
                 bright_spots[sonar_datum1.stamp],
                 bright_spots[sonar_datum2.stamp],
@@ -768,10 +653,14 @@ class Preprocessor:
                 num_bright_spots[sonar_datum1.stamp],
                 num_bright_spots[sonar_datum2.stamp],
             ):
-                tuple_stamps.append(
-                    (sonar_datum1.stamp, sonar_datum2.stamp)
-                )  # Q: is it ok that this i symmetric?
-                tuple_stamps.append((sonar_datum2.stamp, sonar_datum1.stamp))
+                # Randomly choose the order of the tuple
+                chosen_tuple = random.choice(
+                    [
+                        (sonar_datum1.stamp, sonar_datum2.stamp),
+                        (sonar_datum2.stamp, sonar_datum1.stamp),
+                    ]
+                )
+                tuple_stamps.append(chosen_tuple)
 
         num_tuples = len(tuple_stamps)
         num_bs_mean = np.array([num_bs for num_bs in num_bright_spots.values()]).mean()
@@ -781,184 +670,3 @@ class Preprocessor:
         with open(self.this_config_save_dir / "tuple_stamps.json", "w") as f:
             json.dump(tuple_stamps, f, indent=2)
         return True
-
-
-def _find_bright_spots(im: torch.Tensor, conv_size=8, bs_threshold=210) -> torch.Tensor:
-    maxpool = nn.MaxPool2d(conv_size, stride=conv_size, return_indices=True)
-    pool, indices = maxpool(im.to(torch.float))
-    mask = pool > bs_threshold
-    masked_indices = indices[mask]
-    row, col = _unravel_index_2d(masked_indices, [4096, 512])
-    bright_spots_temp = torch.column_stack((row, col)).to(torch.float)
-    bright_spots = torch.full((64 * 64, 2), torch.nan)
-    bright_spots[: bright_spots_temp.shape[0], :] = bright_spots_temp
-    return bright_spots.permute(1, 0).view(2, 64, 64)
-
-
-def plot_overlap(config, source_dir) -> None:
-    try:
-        with open(source_dir / "tuple_stamps.json") as f:
-            tuple_stamps = json.load(f)
-    except IOError:
-        warn(f"tuple_stamps.json file")
-        return
-    except JSONDecodeError:
-        warn(f"tuple_stamps.json file empty")
-        return
-    idx = random.randrange(len(tuple_stamps))
-    stamp0, stamp1 = tuple_stamps[idx]
-    image_dir = source_dir.parent / "images"
-    transform = T.Compose([T.PILToTensor()])
-    im_path0 = image_dir / f"sonar_{stamp0}.png"
-    im_path1 = image_dir / f"sonar_{stamp1}.png"
-    try:
-        im0 = Image.open(im_path0)
-    except FileNotFoundError:
-        warn("Image file not found, skipping the rest of the operations")
-        return  # type: ignore[return-value]
-    im_tensor0 = transform((im0.resize(config.image_shape)))
-    try:
-        im1 = Image.open(im_path1)
-    except FileNotFoundError:
-        warn("Image file not found, skipping the rest of the operations")
-        return  # type: ignore[return-value]
-    im_tensor1 = transform((im1.resize((512, 512))))
-    with open(source_dir / "unfiltered_pose_data.json") as f:
-        poses = json.load(f)
-    pose0: dict[str, int | dict[str, float] | list[float]] = {}
-    pose1: dict[str, int | dict[str, float] | list[float]] = {}
-    for this_pose in poses:
-        if (not len(pose0) == 0) and (not len(pose1) == 0):
-            break
-        if this_pose["timestamp"] == stamp0:
-            pose0 = this_pose
-            continue
-        if this_pose["timestamp"] == stamp1:
-            pose1 = this_pose
-            continue
-    if len(pose0) == 0 or len(pose1) == 0:
-        warn("Pose data not found, skipping the rest of the operations")
-        return
-    sonar_datum0 = SonarDatum(
-        image=im_tensor0,
-        pose=CameraPose(
-            position=[
-                pose0["point_position"]["x"],  # type ignore[index, call-overload]
-                pose0["point_position"]["y"],  # type ignore[index, call-overload]
-                pose0["point_position"]["z"],  # type ignore[index, call-overload]
-            ],
-            rotation=[
-                pose0["quaterion_orientation"][
-                    "x"
-                ],  # type ignore[index, call-overload]
-                pose0["quaterion_orientation"][
-                    "y"
-                ],  # type ignore[index, call-overload]
-                pose0["quaterion_orientation"][
-                    "z"
-                ],  # type ignore[index, call-overload]
-                pose0["quaterion_orientation"][
-                    "w"
-                ],  # type ignore[index, call-overload]
-            ],
-        ),
-        params=CameraParams(
-            min_range=config.min_range,
-            max_range=config.max_range,
-            azimuth=config.horizontal_fov,
-            elevation=config.vertical_fov,
-        ),
-    )
-    sonar_datum1 = SonarDatum(
-        image=im_tensor1,
-        pose=CameraPose(
-            position=[
-                pose1["point_position"]["x"],  # type ignore[index]
-                pose1["point_position"]["y"],  # type ignore[index]
-                pose1["point_position"]["z"],  # type ignore[index]
-            ],
-            rotation=[
-                pose1["quaterion_orientation"]["x"],  # type ignore[index]
-                pose1["quaterion_orientation"]["y"],  # type ignore[index]
-                pose1["quaterion_orientation"]["z"],  # type ignore[index]
-                pose1["quaterion_orientation"]["w"],  # type ignore[index]
-            ],
-        ),
-        params=CameraParams(
-            min_range=config.min_range,
-            max_range=config.max_range,
-            azimuth=config.horizontal_fov,
-            elevation=config.vertical_fov,
-        ),
-    )
-    bs0_uv = _find_bright_spots(
-        sonar_datum0.image, config.conv_size, config.bright_spots_threshold
-    )
-    bs1_uv = _find_bright_spots(
-        sonar_datum1.image, config.conv_size, config.bright_spots_threshold
-    )
-    height, width = sonar_datum1.image.shape[1:]
-    bs0_uv_proj = warp_image_batch(
-        bs0_uv.unsqueeze(0),
-        [sonar_datum0.params],
-        [sonar_datum0.pose],
-        [sonar_datum1.params],
-        [sonar_datum1.pose],
-        (width, height),
-    )
-    bs1_uv_proj = warp_image_batch(
-        bs1_uv.unsqueeze(0),
-        [sonar_datum1.params],
-        [sonar_datum1.pose],
-        [sonar_datum0.params],
-        [sonar_datum0.pose],
-        (width, height),
-    )
-
-    black = torch.full((512, 512), 255)
-    _, ax = plt.subplots(2, 3)
-    ax[0, 0].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
-    ax[0, 1].imshow(black, cmap="gray")
-    ax[0, 1].plot(bs0_uv[1], bs0_uv[0], ",w")
-    ax[0, 2].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
-    ax[0, 2].plot(bs0_uv[1], bs0_uv[0], ".r", alpha=0.5)
-    ax[0, 2].plot(
-        bs1_uv_proj[:, :, 1, ...].flatten(),
-        bs1_uv_proj[:, :, 0, ...].flatten(),
-        ".b",
-        alpha=0.5,
-    )
-    ax[1, 0].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
-    ax[1, 1].imshow(black, cmap="gray")
-    ax[1, 1].plot(bs1_uv[1], bs1_uv[0], ",w")
-    ax[1, 2].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
-    ax[1, 2].plot(bs1_uv[1], bs1_uv[0], ".r", alpha=0.5)
-    ax[1, 2].plot(
-        bs0_uv_proj[:, :, 1, ...].flatten(),
-        bs0_uv_proj[:, :, 0, ...].flatten(),
-        ".b",
-        alpha=0.5,
-    )
-    plt.show()
-    return
-    _, ax = plt.subplots(2, 2)
-    ax[0, 0].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
-    ax[0, 1].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
-    ax[1, 0].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
-    ax[1, 0].plot(bs0_uv[1], bs0_uv[0], ".r", alpha=0.5)
-    ax[1, 1].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
-    ax[1, 1].plot(bs1_uv[1], bs1_uv[0], ".r", alpha=0.5)
-    ax[1, 0].plot(
-        bs1_uv_proj[:, :, 1, ...].flatten(),
-        bs1_uv_proj[:, :, 0, ...].flatten(),
-        ".b",
-        alpha=0.5,
-    )
-    ax[1, 1].plot(
-        bs0_uv_proj[:, :, 1, ...].flatten(),
-        bs0_uv_proj[:, :, 0, ...].flatten(),
-        ".b",
-        alpha=0.5,
-    )
-    plt.show()
-    return
