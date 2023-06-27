@@ -32,6 +32,23 @@ from sips.utils.point_projection import (
 )
 
 
+@torch.no_grad()
+def init_weights(m: torch.nn.Module) -> None:
+    """
+    Initialize weights.
+
+    Inspired by: https://adityassrana.github.io/blog/theory/2020/08/26/Weight-Init.html#Weight-Initialization:-Residual-Networks
+
+    """
+    if isinstance(m, (torch.nn.Conv2d, torch.nn.Linear)):
+        torch.nn.init.kaiming_normal_(
+            m.weight, mode="fan_out", nonlinearity="leaky_relu"
+        )
+    elif isinstance(m, (torch.nn.BatchNorm2d, torch.nn.GroupNorm)):
+        torch.nn.init.constant_(m.weight, 1)
+        torch.nn.init.constant_(m.bias, 0)
+
+
 def build_descriptor_loss(
     source_des: torch.Tensor,
     target_des: torch.Tensor,
@@ -254,8 +271,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         self.with_io = with_io
         self.io_net = InlierNet(blocks=4) if self.with_io else None
 
-        # Other useful things to track
-        self.vis: dict[str, npt.NDArray[np.float64]] = {}
+        # Initialize weights
+        self.apply(init_weights)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
