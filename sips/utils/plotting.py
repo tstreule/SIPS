@@ -1,9 +1,10 @@
 import io
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+import torch
 from PIL import Image
 
 # ==============================================================================
@@ -18,15 +19,25 @@ COLOR_SEQUENCE = [_RED, _GREEN, _BLUE, _GRAY]
 
 
 # ==============================================================================
+# Util
+
+
+def _asarray(arr: npt.ArrayLike) -> npt.NDArray[np.float32]:
+    if isinstance(arr, torch.Tensor):
+        return arr.cpu().float().numpy()
+    return np.asarray(arr, dtype=np.float32)
+
+
+# ==============================================================================
 # Sonar Projection Arcs
 
 
 def plot_arcs_2d(
-    keypoints_uv: npt.ArrayLike,
+    keypoints_uv: Sequence[npt.ArrayLike],
     image_resolution: tuple[int, int],
     convolution_size: int,
-    colors: str | list[str] | None = None,
-    keypoint_pairs: tuple[npt.ArrayLike, ...] | None = None,
+    colors: str | Sequence[str] | None = None,
+    keypoint_pairs: Sequence[npt.ArrayLike] | None = None,
     keypoint_pairs_color: str | None = None,
 ) -> plt.Axes:
     """
@@ -34,15 +45,15 @@ def plot_arcs_2d(
 
     Parameters
     ----------
-    keypoints_uv : npt.ArrayLike
+    keypoints_uv : Sequence[npt.ArrayLike]
         Keypoints of shape (..., 2).
     image_resolution : tuple[int, int]
         Width and height of image.
     convolution_size : int
         Distance of visual guidelines / xticks and yticks grid.
-    colors : str | list[str] | None, optional
+    colors : str | Sequence[str] | None, optional
         Colors of the keypoints, by default None
-    keypoint_pairs : tuple[npt.ArrayLike, ...] | None, optional
+    keypoint_pairs : Sequence[npt.ArrayLike] | None, optional
         Keypoint pairs that will be connected by a line, by default None
     keypoint_pairs_color : str | None, optional
         Color of the connecting line for keypoint pairs, by default None
@@ -54,9 +65,8 @@ def plot_arcs_2d(
 
     """
     # Handle input
-    keypoints_uv = [
-        np.asarray(kp_uv, np.float64).reshape(-1, 2) for kp_uv in keypoints_uv  # type: ignore
-    ]
+    keypoints_uv = [_asarray(kp_uv).reshape(-1, 2) for kp_uv in keypoints_uv]
+    keypoints_uv = cast(list[npt.NDArray[np.float32]], keypoints_uv)
     assert all(kp_uv.shape[-1] == 2 and kp_uv.ndim == 2 for kp_uv in keypoints_uv)
     # Handle colors
     if colors is None:
@@ -88,6 +98,7 @@ def plot_arcs_2d(
 
     # Plot lines
     if keypoint_pairs is not None:
+        keypoint_pairs = [_asarray(pair) for pair in keypoint_pairs]
         lines = np.concatenate(keypoint_pairs, axis=-1)
         lines = lines.reshape(-1, 2 * len(keypoint_pairs))
         for points in lines:
@@ -99,20 +110,20 @@ def plot_arcs_2d(
 
 
 def plot_arcs_3d(
-    keypoints_xyz: list[npt.ArrayLike],
-    camera_pos: list[npt.ArrayLike | None] | None = None,
-    colors: str | list[str] | None = None,
+    keypoints_xyz: Sequence[npt.ArrayLike],
+    camera_pos: Sequence[npt.ArrayLike | None] | None = None,
+    colors: str | Sequence[str] | None = None,
 ) -> plt.Axes:
     """
     Plot projection arcs in Euclidean (xyz) space.
 
     Parameters
     ----------
-    keypoints_xyz : list[npt.ArrayLike]
+    keypoints_xyz : Sequence[npt.ArrayLike]
         Keypoints of shape (..., n_elevations, 3).
-    camera_pos : list[npt.ArrayLike | None] | None, optional
+    camera_pos : Sequence[npt.ArrayLike | None] | None, optional
         Camera position for the (set of) keypoints, by default None
-    colors : str | list[str] | None, optional
+    colors : str | Sequence[str] | None, optional
         Colors of the keypoints, by default None
 
     Returns
@@ -122,15 +133,16 @@ def plot_arcs_3d(
 
     """
     # Handle input
-    keypoints_xyz = [np.array(kp_xyz, np.float64) for kp_xyz in keypoints_xyz]
-    assert all(kp_xyz.shape[-1] == 3 and kp_xyz.ndim == 3 for kp_xyz in keypoints_xyz)  # type: ignore
+    keypoints_xyz = [_asarray(kp_xyz) for kp_xyz in keypoints_xyz]
+    keypoints_xyz = cast(list[npt.NDArray[np.float32]], keypoints_xyz)
+    assert all(kp_xyz.shape[-1] == 3 and kp_xyz.ndim == 3 for kp_xyz in keypoints_xyz)
     # Camera positions
     camera_positions: list[Iterable[float] | None]
     if camera_pos is None:
-        camera_positions = [None] * len(keypoints_xyz)  # type: ignore
+        camera_positions = [None] * len(keypoints_xyz)
     else:
         camera_positions = [
-            np.asarray(cp) if cp is not None else None for cp in camera_pos
+            _asarray(cp) if cp is not None else None for cp in camera_pos
         ]
     # Colors
     if colors is None:
@@ -148,7 +160,7 @@ def plot_arcs_3d(
             x, y, z = pos
             ax.scatter(x, y, z, marker="o", color=color)
         # Plot arcs
-        for arc in np.asarray(arcs):
+        for arc in arcs:
             kwargs = dict(color=color, alpha=0.2, linewidth=1.8)
             ax.plot(arc[:, 0], arc[:, 1], arc[:, 2], **kwargs)
 
