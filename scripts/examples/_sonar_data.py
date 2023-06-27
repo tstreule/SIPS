@@ -38,6 +38,7 @@ def get_random_datum(seed: int | None = None) -> SonarDatum:
 
     # Make random image
     image = torch.rand_like(_IMAGE, dtype=torch.float) * 255
+    image = image.to(torch.uint8)
 
     # Make random pose
     position = torch.normal(torch.zeros(3), 1)  # meters

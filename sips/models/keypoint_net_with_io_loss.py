@@ -3,8 +3,6 @@
 from typing import Callable, Literal
 
 import matplotlib.pyplot as plt
-import numpy as np
-import numpy.typing as npt
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
@@ -17,7 +15,7 @@ from sips.configs.base_config import _ModelConfig
 from sips.data import SonarBatch
 from sips.evaluation import evaluate_keypoint_net
 from sips.networks import InlierNet, KeypointNet, KeypointResnet
-from sips.utils.image import normalize_2d_coordinate, to_color_normalized
+from sips.utils.image import normalize_2d_coordinate, normalize_sonar
 from sips.utils.keypoint_matching import PSEUDO_INF, match_keypoints_2d_batch
 from sips.utils.plotting import (
     COLOR_HIGHLIGHT,
@@ -282,8 +280,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
 
     def forward(self, batch: SonarBatch) -> _forward_return_type:
         # Normalize images and (optional) 1D -> 3D
-        image1 = to_color_normalized(batch.image1.clone())
-        image2 = to_color_normalized(batch.image2.clone())
+        image1 = normalize_sonar(batch.image1.clone())
+        image2 = normalize_sonar(batch.image2.clone())
         if self.use_color:
             image1 = image1.repeat_interleave(3, dim=1)
             image2 = image2.repeat_interleave(3, dim=1)
@@ -311,6 +309,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         target_score, target_uv_pred, target_feat = target_out
         source_score, source_uv_pred, source_feat = source_out
 
+        # Check dimensions
         B, _, H, W = batch.image1.shape
         _, _, HC, WC = target_score.shape
 
@@ -318,8 +317,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         loss_2d = torch.tensor(0.0, device=self.device)  # type: ignore[arg-type]
 
         # Normalize to uv coordinates
-        target_uv_norm = normalize_2d_coordinate(target_uv_pred.clone(), W, H)
-        source_uv_norm = normalize_2d_coordinate(source_uv_pred.clone(), W, H)
+        target_uv_norm = normalize_2d_coordinate(target_uv_pred.clone(), H, W)
+        source_uv_norm = normalize_2d_coordinate(source_uv_pred.clone(), H, W)
         target_uv_norm = target_uv_norm.permute(0, 2, 3, 1)
         source_uv_norm = source_uv_norm.permute(0, 2, 3, 1)
         source_uv_warp_all = warp_image_batch(
@@ -347,7 +346,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         loss_2d += self.keypoint_loss_weight * loc_loss
 
         source_uv_warp = source_uv_warp.permute(0, 2, 1).view(B, 2, HC, WC)
-        source_uv_warp_norm = normalize_2d_coordinate(source_uv_warp.clone(), W, H)
+        source_uv_warp_norm = normalize_2d_coordinate(source_uv_warp.clone(), H, W)
         source_uv_warp_norm = source_uv_warp_norm.permute(0, 2, 3, 1)
 
         # 2) Descriptor head loss (per pixel level triplet loss)

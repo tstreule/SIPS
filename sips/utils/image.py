@@ -3,7 +3,6 @@
 from functools import lru_cache
 
 import torch
-import torch.nn.functional as F
 
 
 @lru_cache(maxsize=None)
@@ -86,66 +85,32 @@ def image_grid(
     return grid
 
 
-def to_gray_normalized(images: torch.Tensor) -> torch.Tensor:
-    """Performs image normalization and converts images to grayscale (preserving dimensions)
-
-    Parameters
-    ----------
-    images: torch.Tensor
-        Input images.
-
-    Returns
-    -------
-    normalized_images: torch.Tensor
-        Normalized grayscale images.
-    """
-    assert len(images.shape) == 4
-    images -= 0.5
-    images *= 0.225
-    normalized_images = images.mean(1).unsqueeze(1)
-    return normalized_images
-
-
-def to_color_normalized(images: torch.Tensor) -> torch.Tensor:
-    """Performs image normalization and converts images to grayscale (preserving dimensions)
-
-    Parameters
-    ----------
-    images: torch.Tensor
-        Input images.
-
-    Returns
-    -------
-    normalized_images: torch.Tensor
-        Normalized grayscale images.
-    """
-    assert len(images.shape) == 4
-    images -= 0.5
-    images *= 0.225
-    return images
+def normalize_sonar(images: torch.Tensor) -> torch.Tensor:
+    assert images.ndim == 4
+    return images.div(255).sub_(0.5)
 
 
 def normalize_2d_coordinate(
-    coord: torch.Tensor, width: int, height: int
+    coord: torch.Tensor, height: int, width: int
 ) -> torch.Tensor:
     """
     Normalize 2D coordinates
 
     """
     assert coord.shape[1] == 2
-    coord[:, 0] = (coord[:, 0] / ((width - 1) * 0.5)) - 1
-    coord[:, 1] = (coord[:, 1] / ((height - 1) * 0.5)) - 1
+    coord[:, 0] = (coord[:, 0] / ((height - 1) * 0.5)) - 1
+    coord[:, 1] = (coord[:, 1] / ((width - 1) * 0.5)) - 1
     return coord
 
 
 def unnormalize_2d_coordinate(
-    coord: torch.Tensor, width: int, height: int
+    coord: torch.Tensor, height: int, width: int
 ) -> torch.Tensor:
     """
     Unnormalize 2D coordinates
 
     """
     assert coord.shape[1] == 2
-    coord[:, 0] = (coord[:, 0] + 1) * (0.5 * (width - 1))
-    coord[:, 1] = (coord[:, 1] + 1) * (0.5 * (height - 1))
+    coord[:, 0] = (coord[:, 0] + 1) * (0.5 * (height - 1))
+    coord[:, 1] = (coord[:, 1] + 1) * (0.5 * (width - 1))
     return coord
