@@ -19,3 +19,4 @@ pyproject-flake8==6.0.0.post1
 # Type stubs
 pandas-stubs
 types-pillow
+types-tqdm
