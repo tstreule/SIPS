@@ -2,12 +2,15 @@
 
 from typing import Callable, Literal
 
+import cv2
 import matplotlib.pyplot as plt
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from pytorch_lightning.loggers.wandb import WandbLogger
 from torch import optim
+from torchvision.transforms import ToPILImage
 from typing_extensions import Self
 
 import wandb
@@ -511,9 +514,16 @@ class KeypointNetwithIOLoss(pl.LightningModule):
 
     def validation_step(self, batch: SonarBatch, batch_idx: int) -> None:
         B, _, H, W = batch.image1.shape
-        (_, coord_1, _), (_, coord_2, _) = self._shared_eval(batch, batch_idx, "val")
+        (score_1, coord_1, _), (score_2, coord_2, _) = self._shared_eval(
+            batch, batch_idx, "val"
+        )
 
-        if self.logger is None:
+        # Don't make plots when there is no WandB Logger
+        if not isinstance(self.logger, WandbLogger):
+            return
+        # Don't plot more than 64 images
+        # Otherwise, there are way too many images stored in RAM, killing the terminal.
+        if batch_idx >= 64 / B:
             return
 
         # NOTE: The image warping and keypoint matching technically allready have been
@@ -537,6 +547,17 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         )
 
         for b in range(B):
+            to_pil = ToPILImage()
+            # Find top K most confident predictions
+            topk1 = score_1[b].flatten(1).topk(self.top_k2, dim=1).indices
+            topk2 = score_2[b].flatten(1).topk(self.top_k2, dim=1).indices
+            img_topk1 = np.array(to_pil(batch.image1[b]).convert("RGB"))
+            for h, w in coord_1[b].flatten(1).take_along_dim(topk1, -1).cpu().numpy().T:
+                cv2.circle(img_topk1, (round(w), round(h)), 2, (255, 0, 0), -1)
+            img_topk2 = np.array(to_pil(batch.image2[b]).convert("RGB"))
+            for h, w in coord_2[b].flatten(1).take_along_dim(topk2, -1).cpu().numpy().T:
+                cv2.circle(img_topk2, (round(w), round(h)), 2, (255, 0, 0), -1)
+
             # Get 2D plot
             ax2d = plot_arcs_2d(
                 [coord_1[b].flatten(1).t(), coord_2_warp[b].flatten(2).mT],
@@ -546,7 +567,6 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 (matches_1[b][mask[b]].cpu(), matches_2[b][mask[b]]),
                 COLOR_HIGHLIGHT,
             )
-            ax2d.set_axis_off()
             ax2d.figure.set_size_inches(15, 15)
             img2d = fig2img(ax2d.figure, dpi=90, bbox_inches="tight", pad_inches=0)
             plt.close()
@@ -572,8 +592,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             dists_b = dists[b, mask[b]]
             self.table.add_data(
                 self.logger.experiment.step,
-                wandb.Image(batch.image1[b]),
-                wandb.Image(batch.image2[b]),
+                wandb.Image(img_topk1),
+                wandb.Image(img_topk2),
                 wandb.Image(img2d),
                 wandb.Image(img3d),
                 dists_b.mean(),
