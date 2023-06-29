@@ -351,15 +351,16 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # 1) Keypoint/Localization loss
         # Note that we select `source_uv_warp` as the closest warped coordinate points
         _, source_uv_warp, min_distance, amin_distance, mask = match_keypoints_2d_batch(
-            # transpose such that the keypoints are ordered according to a proper meshgrid
-            target_uv_pred.mT.contiguous(),
-            source_uv_warp_all.mT.contiguous(),
-            self.keypoint_net.cell,
-            self.epsilon_uv,
-            allow_multi_match=True,
+            target_uv_pred,
+            source_uv_warp_all,
+            self.cell,
+            distance_threshold=torch.inf,
             distance=self.distance_metric,
+            allow_multi_match=True,  # TODO: Is this the right approach?
         )
-        loc_loss = min_distance[mask].mean()
+        # Discard keypoints for which the distance is larger than threshold
+        keypoint_mask = min_distance < self.epsilon_uv * self.cell
+        loc_loss = min_distance[mask & keypoint_mask].mean()
         loss_2d += self.keypoint_loss_weight * loc_loss
 
         source_uv_warp = source_uv_warp.permute(0, 2, 1).view(B, 2, HC, WC)
@@ -395,7 +396,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # Note that the nan-filled values anyway get masked out
         target_score_resampled = F.grid_sample(
             target_score,
-            source_uv_warp_norm.detach().nan_to_num(PSEUDO_INF),
+            source_uv_warp_norm.detach().nan_to_num(),
             mode="bilinear",
             align_corners=True,
         ).view(B, HC * WC)
@@ -432,10 +433,10 @@ class KeypointNetwithIOLoss(pl.LightningModule):
 
             source_feat_topk = F.grid_sample(
                 source_feat, source_uv_norm_topk.unsqueeze(1), align_corners=True
-            ).squeeze()
+            ).squeeze(2)
             target_feat_topk = F.grid_sample(
                 target_feat, target_uv_norm_topk.unsqueeze(1), align_corners=True
-            ).squeeze()
+            ).squeeze(2)
 
             source_feat_topk = source_feat_topk.div(
                 torch.norm(source_feat_topk, p=2, dim=1).unsqueeze(1)
@@ -484,11 +485,15 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 dim=2,
             )
             inlier_mask = matching_score.lt(self.relax_field)
-            inlier_gt = 2 * inlier_mask.float() - 1  # in [-1, 1], i.e.  sign function
+            inlier_gt = 2 * inlier_mask.float() - 1  # in [-1, 1], i.e. sign function
 
             if inlier_mask.sum() > 10:
                 io_loss = 0.5 * F.mse_loss(inlier_pred, inlier_gt)
                 loss_2d += io_loss
+
+        # Sanity check
+        if torch.isnan(loss_2d):
+            raise RuntimeError("Loss is NaN.")
 
         return loss_2d, recall_2d
 
@@ -523,9 +528,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
 
         # Match keypoints
         matches_1, matches_2, dists, _, mask = match_keypoints_2d_batch(
-            # transpose such that the keypoints are ordered according to a proper meshgrid
-            coord_1.mT.contiguous(),
-            coord_2_warp.mT.contiguous(),
+            coord_1,
+            coord_2_warp,
             self.cell,
             self.epsilon_uv,
             allow_multi_match=True,

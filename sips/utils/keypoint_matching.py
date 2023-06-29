@@ -148,8 +148,8 @@ def _point2point_distance(
     # Fill nan values with dummy values such that the gradient does not get nan
     # then fill those dummy distances with nan values to obtain true distance.
     nan_mask = ~(torch.isfinite(p1).all(dim) & torch.isfinite(p2).all(dim))
-    diff = p1.nan_to_num(PSEUDO_INF) - p2.nan_to_num(-PSEUDO_INF)
-    distance = torch.linalg.vector_norm(diff.clone(), dim=dim)
+    diff = p1.nan_to_num() - p2.nan_to_num()
+    distance = torch.linalg.vector_norm(diff, dim=dim)
     # Clone to prevent the following error due to inplace operation:
     #     RuntimeError: one of the variables needed for gradient computation
     #     has been modified by an inplace operation [...]
@@ -447,17 +447,18 @@ def _sanity_check_kp1_uv(kp1_uv: torch.Tensor, cell: int, H: int, W: int) -> Non
     idx[1] = idx[1].clip(0, W - 1)
 
     # Reconstruct uv0 using the index
-    uv0_rec = uv0.movedim(0, 2)[tuple(idx)]
+    uv0_rec = uv0.movedim(0, 2)[tuple(idx)].t().view(uv0.shape)
 
-    # Check if allclose
+    # Check if allclose while ignoring NaN values
     msg = (
         "The original keypoints are not ordered according to a meshgrid. "
         "This means that the concept of rounding (converting to int) does not "
         "represent the index of itself."
     )
+    mask = torch.isfinite(uv0).all(0) & torch.isfinite(uv0_rec).all(0)
     torch.testing.assert_close(
         # fmt: off
-        uv0.flatten(1).t(), uv0_rec,
+        uv0[:, mask], uv0_rec[:, mask],
         equal_nan=True, msg=msg,
         # Set a very high tolerance as the keypoints do not always land on themselves
         rtol=3 * cell, atol=3 * cell,
@@ -503,8 +504,6 @@ def match_keypoints_2d_batch(
         Distance function to use, by default "p2l"
         If "p2p", uses Point-to-Point distance metric (less precise, slightly faster).
         If "p2l", uses Point-to-LineSegment distance metric (more precise, default).
-    return_distances : bool, optional
-        If True, returns the calculated distances instead (for training), by default False
 
     Returns
     -------
@@ -525,7 +524,37 @@ def match_keypoints_2d_batch(
     B, D, C, H, W = kp2_uv_proj.shape
     assert C == 2
     assert kp1_uv.device == kp2_uv_proj.device
-    _sanity_check_kp1_uv(kp1_uv, convolution_size, H, W)
+    try:
+        # Check if 'kp1_uv' is meshgrid-like
+        _sanity_check_kp1_uv(kp1_uv, convolution_size, H, W)
+    except AssertionError:
+        # Transpose and do the sanity check again to avoid infitite try-except loop
+        kp1_uv = kp1_uv.mT.contiguous()
+        kp2_uv_proj = kp2_uv_proj.mT.contiguous()
+        _sanity_check_kp1_uv(kp1_uv, convolution_size, H, W)
+
+        # Use swapped input
+        output = match_keypoints_2d_batch(
+            kp1_uv,
+            kp2_uv_proj,
+            convolution_size,
+            distance_threshold,
+            allow_multi_match,
+            window_size,
+            distance,
+        )
+        kp1_matches, kp2_matches, min_distances, argmin_distances, mask = output
+
+        # Undo the swap
+        kp1_matches = kp1_matches.view(B, H, W, 2).swapaxes_(1, 2).flatten(1, 2)
+        kp2_matches = kp2_matches.view(B, H, W, 2).swapaxes_(1, 2).flatten(1, 2)
+        min_distances = min_distances.view(B, H, W).mT.flatten(1, 2)
+        argmin_distances = (
+            argmin_distances.view(B, H, W, 3).swapaxes_(1, 2).flatten(1, 2)
+        )
+        mask = mask.view(B, H, W).mT.flatten(1, 2)
+
+        return (kp1_matches, kp2_matches, min_distances, argmin_distances, mask)
 
     # Permute dimensions for nicer data handling
     kp1_uv = kp1_uv.permute(0, 2, 3, 1)  # (B,H,W,2)
