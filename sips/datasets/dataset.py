@@ -44,11 +44,7 @@ class SonarDataset(Dataset[SonarDatumPair]):
     def __len__(self) -> int:
         return len(self.tuples)
 
-    def __getitem__(
-        self, index
-    ) -> (
-        SonarDatumPair
-    ):  
+    def __getitem__(self, index) -> SonarDatumPair:
         this_tuple = self.tuples[index]
         pose_data0 = self.poses[str(this_tuple[0])]
         pose_data1 = self.poses[str(this_tuple[1])]

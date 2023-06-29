@@ -25,7 +25,7 @@ def main(
 ) -> None:
     """
     Example script on how to run all preprocessing steps
-    
+
     """
     config = parse_train_file(config_path).datasets
     rosbags = config.rosbags
