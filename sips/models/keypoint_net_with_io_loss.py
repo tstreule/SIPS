@@ -339,8 +339,6 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # Normalize to uv coordinates
         target_uv_norm = normalize_2d_coordinate(target_uv_pred.clone(), H, W)
         source_uv_norm = normalize_2d_coordinate(source_uv_pred.clone(), H, W)
-        target_uv_norm = target_uv_norm.permute(0, 2, 3, 1)
-        source_uv_norm = source_uv_norm.permute(0, 2, 3, 1)
         source_uv_warp_all = warp_image_batch(
             source_uv_pred.clone(),
             batch.params2,
@@ -361,14 +359,20 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             distance=self.distance_metric,
             allow_multi_match=True,  # TODO: Is this the right approach?
         )
+        # Border mask
+        border_mask = torch.ones(B, HC, WC).to(mask)
+        border_mask[:, 0] = 0
+        border_mask[:, -1] = 0
+        border_mask[:, :, 0] = 0
+        border_mask[:, :, -1] = 0
+        border_mask = border_mask.view(mask.shape)
         # Discard keypoints for which the distance is larger than threshold
         keypoint_mask = min_distance < self.epsilon_uv * self.cell
-        loc_loss = min_distance[mask & keypoint_mask].mean()
+        loc_loss = min_distance[mask & border_mask & keypoint_mask].mean()
         loss_2d += self.keypoint_loss_weight * loc_loss
 
         source_uv_warp = source_uv_warp.permute(0, 2, 1).view(B, 2, HC, WC)
         source_uv_warp_norm = normalize_2d_coordinate(source_uv_warp.clone(), H, W)
-        source_uv_warp_norm = source_uv_warp_norm.permute(0, 2, 3, 1)
 
         # 2) Descriptor head loss (per pixel level triplet loss)
         if self.descriptor_loss:

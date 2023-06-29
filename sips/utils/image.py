@@ -97,10 +97,12 @@ def normalize_2d_coordinate(
     Normalize 2D coordinates
 
     """
-    assert coord.shape[1] == 2
+    _, d, _, _ = coord.shape
+    assert d == 2
+
     coord[:, 0] = (coord[:, 0] / ((height - 1) * 0.5)) - 1
     coord[:, 1] = (coord[:, 1] / ((width - 1) * 0.5)) - 1
-    return coord
+    return coord.permute(0, 2, 3, 1)
 
 
 def unnormalize_2d_coordinate(
@@ -110,7 +112,9 @@ def unnormalize_2d_coordinate(
     Unnormalize 2D coordinates
 
     """
-    assert coord.shape[1] == 2
-    coord[:, 0] = (coord[:, 0] + 1) * (0.5 * (height - 1))
-    coord[:, 1] = (coord[:, 1] + 1) * (0.5 * (width - 1))
-    return coord
+    _, _, _, d = coord.shape
+    assert d == 2
+
+    coord[..., 0] = (coord[..., 0] + 1) * (0.5 * (height - 1))
+    coord[..., 1] = (coord[..., 1] + 1) * (0.5 * (width - 1))
+    return coord.permute(0, 3, 1, 2)
