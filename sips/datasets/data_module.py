@@ -1,9 +1,15 @@
+import json
+from json import JSONDecodeError
+from pathlib import Path
+from warnings import warn
+
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 
 from sips.configs.base_config import _DatasetsConfig
 from sips.data import SonarBatch, SonarDatumPair
-from sips.datasets.dataset import DummySonarDataSet, SonarDataset
+from sips.data_extraction.init_preprocessing import call_preprocessing_steps
+from sips.datasets.dataset import SonarDataset
 
 
 class SonarDataModule(pl.LightningDataModule):
@@ -14,17 +20,60 @@ class SonarDataModule(pl.LightningDataModule):
         self.prepare_data_per_node = False
 
         self.config = config
+        self.tuples: SonarDataset
 
     def prepare_data(self) -> None:
         """
-        Download, split, etc... data
+        Run all preprocessing steps for the provided rosbags and configuration
+        if not already done before. Combine the poses and tuple timestamps from
+        all rosbags.
 
         Notes
         -----
         Only called on 1 GPU/TPU in distributed
 
         """
-        ...
+        rosbags = self.config.rosbags
+        poses: dict[int, dict[str, dict[str, float] | int | str]] = {}
+        tuples: list[tuple[int, int]] = []
+        for this_rosbag in rosbags:
+            print(100 * "=")
+            print(f"Start preprocessing {this_rosbag}")
+            source_dir = call_preprocessing_steps(self.config, this_rosbag)
+            if source_dir == None:
+                continue
+            source_dir = Path(source_dir)  # type:ignore[arg-type]
+            try:
+                with open(source_dir / "unfiltered_pose_data.json") as f:
+                    pose_data = json.load(f)
+            except IOError:
+                warn(f"unfiltered_pose_data.json file missing of {this_rosbag}")
+                continue
+            except JSONDecodeError:
+                warn(f"unfiltered_pose_data.json file empty of {this_rosbag}")
+                continue
+            try:
+                with open(source_dir / "tuple_stamps.json") as f:
+                    these_tuples = json.load(f)
+            except IOError:
+                warn(f"tuple_stamps.json file missing of {this_rosbag}")
+                continue
+            except JSONDecodeError:
+                warn(f"tuple_stamps.json file empty of {this_rosbag}")
+                continue
+            config_num = int(source_dir.name)
+            for this_pose in pose_data:
+                poses[int(this_pose["timestamp"])] = {
+                    "point_position": this_pose["point_position"],
+                    "quaterion_orientation": this_pose["quaterion_orientation"],
+                    "rosbag": this_rosbag.split(".")[0],
+                    "config_num": config_num,
+                }
+            tuples += these_tuples
+        with open("data/poses.json", "w") as f:
+            json.dump(poses, f, indent=2)
+        with open("data/tuples.json", "w") as f:
+            json.dump(tuples, f, indent=2)
 
     def setup(self, stage: str) -> None:
         """
@@ -40,9 +89,13 @@ class SonarDataModule(pl.LightningDataModule):
         Called on every process in DDP
 
         """
-        ...
-        self.data_train: SonarDataset = DummySonarDataSet(n=100)
-        self.data_val: SonarDataset = DummySonarDataSet(n=10)
+        dataset = SonarDataset(self.config)
+        train_set, val_set = random_split(
+            dataset, [self.config.train_ratio, self.config.val_ratio]
+        )
+
+        self.data_train = SonarDataset(self.config, train_set)
+        self.data_val = SonarDataset(self.config, val_set)
 
     def train_dataloader(self) -> DataLoader[SonarDatumPair]:
         return DataLoader(

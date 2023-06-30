@@ -16,7 +16,7 @@
   "python.formatting.blackArgs": ["--config", "pyproject.toml"],
   "isort.args": ["--profile", "black"],
   "[python]": {
-    "editor.defaultFormatter": "ms-python.python",
+    "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.codeActionsOnSave": {
       "source.organizeImports": true
     }
@@ -29,5 +29,18 @@
   "[jsonc]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnType": true
-  }
+  },
+  // Set the PYTHONPATH to the root of workspace directory
+  "terminal.integrated.env.osx": {
+    "PYTHONPATH": "${workspaceFolder}"  
+  },
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}" 
+  },
+  "terminal.integrated.env.windows": {
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+  "autoDocstring.docstringFormat": "numpy",
+  "autoDocstring.startOnNewLine": true
+
 }

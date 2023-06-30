@@ -286,7 +286,7 @@ def _point2linesegment_match_batch(
     kp2_mask = mask_finite.gt(1)  # (B,H*W)
     kp2_mask_p2p = mask_finite.eq(1)  # (B,H*W)
     # Rounding down gives the index of the other images point
-    idx = torch.nan_to_num(kp2_uv_proj[kp2_mask] / convolution_size).int()  # (-1,D,2)
+    idx = torch.nan_to_num(kp2_uv_proj[kp2_mask] / convolution_size).long()  # (-1,D,2)
     idx[..., 0] = idx[..., 0].clip(0, H - 1)
     idx[..., 1] = idx[..., 1].clip(0, W - 1)
 
