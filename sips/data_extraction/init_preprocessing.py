@@ -6,10 +6,7 @@ from warnings import warn
 
 from sips.configs.base_config import _DatasetsConfig
 from sips.data_extraction.preprocessing import Preprocessor
-from sips.data_extraction.utils.handle_configs import (
-    add_entry_to_summary,
-    find_config_num,
-)
+from sips.data_extraction.utils.handle_configs import find_config_num
 
 
 def check_preprocessing_status(
@@ -107,15 +104,18 @@ def call_preprocessing_steps(config: _DatasetsConfig, rosbag: str) -> None | str
 
     Parameters
     ----------
-    config: current dataset configuration
-    rosbag: current rosbag
+    config: _DatasetsConfig
+        current dataset configuration
+    rosbag: str
+        current rosbag
 
     Returns
     ----------
-    save_dir: Directory were data for this configuration and rosbag is stored, only
+    save_dir: None | str | Path
+        Directory were data for this configuration and rosbag is stored, only
         provided if all steps are successfull.
-    """
 
+    """
     random.seed(config.seed)
     source_dir = Path("data/filtered") / Path(rosbag).with_suffix("")
     config_num = find_config_num(config, source_dir)

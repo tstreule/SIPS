@@ -4,15 +4,12 @@ from pathlib import Path
 from warnings import warn
 
 import pytorch_lightning as pl
-import torchvision.transforms as T
-from PIL import Image
 from torch.utils.data import DataLoader, random_split
 
-from scripts import preprocess_data
 from sips.configs.base_config import _DatasetsConfig
-from sips.data import CameraParams, CameraPose, SonarBatch, SonarDatum, SonarDatumPair
+from sips.data import SonarBatch, SonarDatumPair
 from sips.data_extraction.init_preprocessing import call_preprocessing_steps
-from sips.datasets.dataset import DummySonarDataSet, SonarDataset
+from sips.datasets.dataset import SonarDataset
 
 
 class SonarDataModule(pl.LightningDataModule):

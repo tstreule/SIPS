@@ -7,7 +7,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 from scripts.examples._sonar_data import get_random_datum_pair
-from sips.data import CameraParams, CameraPose, SonarBatch, SonarDatum, SonarDatumPair
+from sips.data import CameraParams, CameraPose, SonarDatum, SonarDatumPair
 
 
 class SonarDataset(Dataset[SonarDatumPair]):

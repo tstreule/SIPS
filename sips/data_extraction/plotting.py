@@ -19,9 +19,11 @@ from sips.utils.point_projection import warp_image, warp_image_batch  # TODO: ch
 
 
 def _pose_empty(pose: CameraPose) -> bool:
-    return bool((pose.position == torch.tensor((-1, -1, -1))).all()) and bool(
+    is_empty_position = bool((pose.position == torch.tensor((-1, -1, -1))).all())
+    is_empty_rotation = bool(
         (pose.rotation == torch.tensor((-0.5, -0.5, -0.5, -0.5))).all()
     )
+    return is_empty_position and is_empty_rotation
 
 
 def plot_overlap(config, rosbag) -> None:

@@ -138,7 +138,8 @@ class Preprocessor:
 
         Returns
         -------
-        bool, indicating success of operations
+        bool
+            indicating success of operations
 
         """
         sonar_topic = "/proteus_PRA01/sonar_0/image"
@@ -193,7 +194,8 @@ class Preprocessor:
 
         Returns
         -------
-        bool, indicating success of operations
+        bool
+            indicating success of operations
 
         """
         print(f"Extract data")
@@ -406,7 +408,8 @@ class Preprocessor:
 
         Returns
         -------
-        bool, indicating success of operations
+        bool
+            indicating success of operations
 
         """
         print("Match sonar data with poses through interpolation")
@@ -474,7 +477,8 @@ class Preprocessor:
 
         Returns
         -------
-        bool, indicating success of operations
+        bool
+            indicating success of operations
 
         """
         print("Filter sonar images with redudant image filter")
@@ -581,7 +585,8 @@ class Preprocessor:
 
         Returns
         -------
-        bool, indicating success of operations
+        bool
+            indicating success of operations
 
         """
         print("Calculate the image overlap of image pairs")

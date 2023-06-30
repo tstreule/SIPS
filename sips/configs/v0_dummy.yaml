@@ -29,3 +29,4 @@ datasets:
   image_filter_threshold: 0.95 
   image_filter: "gaussian"
   bright_spots_threshold: 210
+  

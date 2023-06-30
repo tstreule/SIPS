@@ -44,9 +44,7 @@ def find_config_num(config, source_dir) -> int:
     try:
         with open(source_dir / "summary.json", "r") as f:
             summary = json.load(f)
-    except IOError:
-        return -1
-    except JSONDecodeError:
+    except (IOError, JSONDecodeError):
         return -1
     variable_config_params = config.get_variable_params()
     if variable_config_params in summary.values():

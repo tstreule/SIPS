@@ -37,6 +37,24 @@ class RedundantImageFilter:
     def image_redundant(
         self, message: ImageMessage, save_path: str | Path, save_ims: bool
     ) -> bool:
+        """
+        Calculates if image is redundant and stores the image regardless of redundancy
+
+        Parameters
+        ----------
+        message : ImageMessage
+            input image
+        save_path : str | Path
+            path to location where image should be stored
+        save_ims : bool
+            indicates if image should be stored. depends on if the images of this
+            bag were stored before
+
+        Returns
+        -------
+        bool
+            True if image is redundant
+        """
         keyframe = message.data.reshape((message.height, message.width))
         # Save all images regardless of redundancy if they were not stored before
         if save_ims:

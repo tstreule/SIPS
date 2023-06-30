@@ -39,5 +39,8 @@
   },
   "terminal.integrated.env.windows": {
     "PYTHONPATH": "${workspaceFolder}"
-  }
+  },
+  "autoDocstring.docstringFormat": "numpy",
+  "autoDocstring.startOnNewLine": true
+
 }
