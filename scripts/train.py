@@ -15,7 +15,7 @@ from pytorch_lightning import Trainer, seed_everything
 from typing_extensions import Annotated
 
 from sips.callbacks import get_callbacks
-from sips.configs import parse_train_file
+from sips.configs import Config, parse_train_file
 from sips.datasets import SonarDataModule
 from sips.models import KeypointNetwithIOLoss
 from sips.utils.logging import setup_wandb_logger
@@ -23,7 +23,7 @@ from sips.utils.logging import setup_wandb_logger
 app = typer.Typer()
 
 
-def _set_debug(debug: bool):
+def _set_debug(debug: bool) -> None:
     if not debug:
         return
 
@@ -35,10 +35,20 @@ def _set_debug(debug: bool):
     torch._dynamo.config.verbose = True  # type: ignore[attr-defined]
 
 
+def _set_accelerator(acc: str) -> str:
+    # Pytorch Lightning would automatically set "mps" if accelerator is "auto" and mps
+    #  is available.  However, since (1) `torch.compile()` cannot handle MPS yet and
+    #  (2) some operators are not yet natively implemented in MPS, we unset it.
+    if acc == "mps" or (acc == "auto" and torch.has_mps):
+        acc = "cpu"
+
+    return acc
+
+
 def _torch_compile(
     model: KeypointNetwithIOLoss, accelerator: str, **kwargs
 ) -> KeypointNetwithIOLoss:
-    if accelerator == "mps":
+    if accelerator == "mps" or (accelerator == "auto" and torch.has_mps):
         # `torch.compile()` cannot handle MPS yet
         return model
 
@@ -60,6 +70,7 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
     config_file = config_file or "sips/configs/v0_dummy.yaml"  # TODO: Delete this line
     config = parse_train_file(config_file)
     _set_debug(config.debug)
+    config.arch.accelerator = _set_accelerator(config.arch.accelerator)
 
     # Initialize model and data module
     model = KeypointNetwithIOLoss.from_config(config.model)

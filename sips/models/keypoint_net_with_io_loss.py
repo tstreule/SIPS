@@ -358,16 +358,16 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             distance=self.distance_metric,
             allow_multi_match=True,  # TODO: Is this the right approach?
         )
-        # Border mask
+        # Apply border mask to the keypoint mask
         border_mask = torch.ones(B, HC, WC).to(mask)
-        border_mask[:, 0] = 0
-        border_mask[:, -1] = 0
-        border_mask[:, :, 0] = 0
-        border_mask[:, :, -1] = 0
-        border_mask = border_mask.view(mask.shape)
+        border_mask[:, : self.border_remove] = 0
+        border_mask[:, -self.border_remove :] = 0
+        border_mask[:, :, : self.border_remove] = 0
+        border_mask[:, :, -self.border_remove :] = 0
+        mask = mask & border_mask.view(mask.shape)
         # Discard keypoints for which the distance is larger than threshold
         keypoint_mask = min_distance < self.epsilon_uv * self.cell
-        loc_loss = min_distance[mask & border_mask & keypoint_mask].mean()
+        loc_loss = min_distance[mask & keypoint_mask].mean()
         loss_2d += self.keypoint_loss_weight * loc_loss
 
         source_uv_warp = source_uv_warp.permute(0, 2, 1).view(B, 2, HC, WC)
@@ -410,7 +410,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             target_score_resampled[mask], source_score.view(B, HC * WC)[mask]
         )
 
-        loss_2d += self.score_loss_weight * (usp_loss.mean() + mse_loss)
+        loss_2d += self.score_loss_weight * (usp_loss.mean() + 2 * mse_loss)
 
         # 4) IO loss
         if self.with_io:
