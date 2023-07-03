@@ -9,7 +9,6 @@ from sips.utils.dotenv import _get_file_parent_dir
 
 
 def setup_wandb_logger(config: Config) -> Literal[False] | WandbLogger:
-
     # Dry run / no logging
     if config.wandb.dry_run:
         return False

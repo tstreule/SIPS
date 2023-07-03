@@ -7,6 +7,7 @@ from sips.utils.dotenv import load_dotenv
 load_dotenv()
 
 
+import json
 from typing import Optional
 
 import torch._dynamo
@@ -45,6 +46,23 @@ def _set_accelerator(acc: str) -> str:
     return acc
 
 
+def _set_config(config_str: Optional[str]) -> Config:
+    # No config
+    if not config_str:
+        return Config()
+    # Config path
+    if config_str.rsplit(".")[-1] in ("yml", "yaml"):
+        return parse_train_file(config_str)
+    # Config dict
+    config_dict = json.loads(
+        config_str.replace("'", '"')
+        .replace('"true"', "true")
+        .replace('"false"', "false")
+        .replace('"null"', "null")
+    )
+    return Config(**config_dict)
+
+
 def _torch_compile(
     model: KeypointNetwithIOLoss, accelerator: str, **kwargs
 ) -> KeypointNetwithIOLoss:
@@ -65,10 +83,14 @@ def _torch_compile(
 
 
 @app.command()
-def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None):
-    # Read configuration
-    config_file = config_file or "sips/configs/v0_dummy.yaml"  # TODO: Delete this line
-    config = parse_train_file(config_file)
+def train(
+    config_str: Annotated[
+        Optional[str],
+        typer.Option("--config", help="Config dict (as str) or path to config file"),
+    ] = None
+):
+    # Handle configuration
+    config = _set_config(config_str)
     _set_debug(config.debug)
     config.arch.accelerator = _set_accelerator(config.arch.accelerator)
 
