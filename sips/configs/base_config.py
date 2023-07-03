@@ -55,23 +55,24 @@ class _ModelConfig:
     # Checkpointing
     checkpoint_path: str = "data/experiments/"
     save_checkpoint: bool = True
-    checkpoint_every_n_epochs: int = 5
+    checkpoint_every_n_epochs: int = 3
 
     # Early stopping
-    # Note that the patience parameter strongly depends on checkpoint_every_n_epochs,
+    # Note that the patience parameter strongly depends on check_val_every_n_epochs,
     # i.e. training will stop earliest after (every_n_epochs+1)*patience epochs.
     early_stopping_patience: int = 10
 
     # Model parameters
     keypoint_loss_weight: float = 2.0  #     # Keypoint loss weight
     descriptor_loss_weight: float = 1.0  #   # Descriptor loss weight
-    score_loss_weight = 1.0  #               # Score loss weight
+    score_loss_weight: float = 1.0  #        # Score loss weight
     use_color: bool = False  #               # Use color or grayscale images
     with_io: bool = True  #                  # Use IONet
     do_upsample: bool = True  #              # Upsample descriptors
     do_cross: bool = True  #                 # Use cross-border keypoints
     descriptor_loss: bool = True  #          # Use hardest neg. mining descriptor loss
     keypoint_net_type: str = "KeypointNet"  ## Type of keypoint network. Supported ['KeypointNet', 'KeypointResnet']
+    epsilon_uv: float = 0.5  #               # Relative threshold (for L_loc)
 
     # Optimizer
     opt_learn_rate: float = 0.001
@@ -79,7 +80,6 @@ class _ModelConfig:
 
     # Scheduler
     sched_decay_rate: float = 0.5  #         # Scheduler decay rate
-    sched_decay_frequency: int = 40  #       # Number of epochs when to decay the initial learning rate by decay rate
 
 
 # --------------------------------------------------------------------------

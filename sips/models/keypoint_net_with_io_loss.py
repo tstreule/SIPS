@@ -206,7 +206,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             opt_learn_rate=config.opt_learn_rate,
             opt_weight_decay=config.opt_weight_decay,
             sched_decay_rate=config.sched_decay_rate,
-            sched_decay_frequency=config.sched_decay_frequency,
+            epsilon_uv=config.epsilon_uv,
         )
 
     def __init__(
@@ -224,7 +224,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         opt_learn_rate: float = 0.001,
         opt_weight_decay: float = 0.0,
         sched_decay_rate: float = 0.5,
-        sched_decay_frequency: int = 50,
+        epsilon_uv: float = 0.5,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -240,7 +240,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         self.border_remove = 4  # Remove points this close to the border.
         self.top_k2 = 300
         self.n_elevations = 5
-        self.epsilon_uv = 0.5  # threshold
+        self.epsilon_uv = epsilon_uv  # threshold
         self.relax_field = int(self.epsilon_uv * self.cell)
         self.distance_metric: Literal["p2p", "p2l"] = "p2l"
 
@@ -251,7 +251,6 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         self.opt_learn_rate = opt_learn_rate
         self.opt_weight_decay = opt_weight_decay
         self.sched_decay_rate = sched_decay_rate
-        self.sched_decay_frequency = sched_decay_frequency
 
         # Initialize KeypointNet
         self.keypoint_net: KeypointNet | KeypointResnet
@@ -466,9 +465,9 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 dim=2,
             )
 
-            inlier_pred = self.io_net(
-                point_pair.permute(0, 2, 1).unsqueeze(3)
-            ).squeeze()
+            inlier_pred = self.io_net(point_pair.permute(0, 2, 1).unsqueeze(3)).view(
+                B, self.top_k2
+            )
 
             target_uv_norm_topk_associated_raw = target_uv_norm_topk_associated.clone()
             target_uv_norm_topk_associated_raw[:, :, 0] = (
@@ -535,9 +534,9 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         #  could be optimized accordingly.
 
         # Warp coordinates to image 1
-        D = self.n_elevations
-        coord_1_xyz = uv_to_xyz_batch(coord_1, batch.params1, batch.pose1, (H, W), D)
-        coord_2_xyz = uv_to_xyz_batch(coord_2, batch.params2, batch.pose2, (H, W), D)
+        ELEV = 5  # number of elevations
+        coord_1_xyz = uv_to_xyz_batch(coord_1, batch.params1, batch.pose1, (H, W), ELEV)
+        coord_2_xyz = uv_to_xyz_batch(coord_2, batch.params2, batch.pose2, (H, W), ELEV)
         coord_2_warp = xyz_to_uv_batch(coord_2_xyz, batch.params1, batch.pose1, (H, W))
 
         # Match keypoints
@@ -576,8 +575,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             plt.close()
 
             # Reshape 3D coordinates for plotting
-            xyz_1_b = coord_1_xyz[b].reshape(self.n_elevations, 3, -1).movedim(2, 0)
-            xyz_2_b = coord_2_xyz[b].reshape(self.n_elevations, 3, -1).movedim(2, 0)
+            xyz_1_b = coord_1_xyz[b].reshape(ELEV, 3, -1).movedim(2, 0)
+            xyz_2_b = coord_2_xyz[b].reshape(ELEV, 3, -1).movedim(2, 0)
             # Get 3D overlap
             nan_mask = coord_2_warp[b].flatten(2).isnan().any(1).t()
             xyz_2_b_filtered = xyz_2_b.clone()
