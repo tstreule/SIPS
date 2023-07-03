@@ -87,7 +87,7 @@ def image_grid(
 
 def normalize_sonar(images: torch.Tensor) -> torch.Tensor:
     assert images.ndim == 4
-    return images.div(255).sub_(0.5)
+    return images.div(255 / 2).sub(1)
 
 
 def normalize_2d_coordinate(
