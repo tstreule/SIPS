@@ -66,6 +66,11 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
     model = _torch_compile(model, config.arch.accelerator)
     dm = SonarDataModule(config.datasets)
 
+    # Set up Wandb logger
+    wandb_logger = setup_wandb_logger(config)
+    if wandb_logger:
+        wandb_logger.watch(model, log="all")
+
     # Initialize callbacks
     callbacks = get_callbacks(
         monitors=[("val_repeatability", "max"), ("val_matching_score", "max")],
@@ -87,7 +92,7 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
         max_epochs=config.arch.max_epochs,
         callbacks=callbacks,
         check_val_every_n_epoch=None,  # must be None since 'callbacks' is implemented
-        logger=setup_wandb_logger(config),
+        logger=wandb_logger,
         log_every_n_steps=config.arch.log_every_n_steps,
         # Debugging
         fast_dev_run=config.debug,
@@ -96,6 +101,10 @@ def main(config_file: Annotated[Optional[str], typer.Option("--config")] = None)
 
     # Train model
     trainer.fit(model, datamodule=dm)
+
+    # After training
+    if wandb_logger:
+        wandb_logger.experiment.unwatch(model)
 
     # Test (only right before publishing your paper or pushing to production!)
     # trainer.test(datamodule=dm, ckpt_path="best")
