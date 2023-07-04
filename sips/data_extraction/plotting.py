@@ -27,7 +27,6 @@ def _pose_empty(pose: CameraPose) -> bool:
 
 
 def plot_overlap(config, rosbag) -> None:
-    random.seed(config.seed)
     source_dir = Path("data/filtered") / Path(rosbag).with_suffix("")
     image_dir = source_dir / "images"
     config_num = find_config_num(config, source_dir)
@@ -146,6 +145,7 @@ def plot_overlap(config, rosbag) -> None:
     black = torch.full((512, 512), 0)
     _, ax = plt.subplots(2, 3)
     ax[0, 0].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
+    ax[0, 0].set_title(f"Sonar of timestamp {stamp0}")
     ax[0, 1].imshow(black, cmap="gray")
     ax[0, 1].plot(bs0_uv[1], bs0_uv[0], ",w")
     ax[0, 2].imshow(sonar_datum0.image.reshape(512, 512), cmap="gray")
@@ -157,6 +157,7 @@ def plot_overlap(config, rosbag) -> None:
         alpha=0.5,
     )
     ax[1, 0].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
+    ax[1, 0].set_title(f"Sonar of timestamp {stamp1}")
     ax[1, 1].imshow(black, cmap="gray")
     ax[1, 1].plot(bs1_uv[1], bs1_uv[0], ",w")
     ax[1, 2].imshow(sonar_datum1.image.reshape(512, 512), cmap="gray")
