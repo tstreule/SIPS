@@ -1,0 +1,31 @@
+<mxfile host="Electron" modified="2023-06-30T14:03:56.017Z" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.5.1 Chrome/112.0.5615.204 Electron/24.6.0 Safari/537.36" etag="k2jWzO7UqoqiDRBIaSGi" version="21.5.1" type="device">
+  <diagram name="Page-1" id="UglITt9oEIL3d5nKTY7a">
+    <mxGraphModel dx="1250" dy="870" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="-imlo63s5jF-1MOi44ty-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;strokeWidth=3;" parent="1" source="-imlo63s5jF-1MOi44ty-1" target="-imlo63s5jF-1MOi44ty-4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-imlo63s5jF-1MOi44ty-1" value="&lt;h1&gt;&lt;font color=&quot;#000000&quot;&gt;Data recording&lt;/font&gt;&lt;/h1&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#CCFF99;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="40" y="80" width="240" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="-imlo63s5jF-1MOi44ty-2" value="&lt;h1&gt;&lt;font color=&quot;#000000&quot;&gt;SIPS&lt;/font&gt;&lt;/h1&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#CCFF99;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="1000" y="80" width="240" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="-imlo63s5jF-1MOi44ty-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;strokeWidth=3;" parent="1" source="-imlo63s5jF-1MOi44ty-3" target="-imlo63s5jF-1MOi44ty-2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-imlo63s5jF-1MOi44ty-3" value="&lt;h1&gt;&lt;font color=&quot;#000000&quot;&gt;Data loading&lt;/font&gt;&lt;/h1&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#CCFF99;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="680" y="80" width="240" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="-imlo63s5jF-1MOi44ty-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#000000;strokeWidth=3;" parent="1" source="-imlo63s5jF-1MOi44ty-4" target="-imlo63s5jF-1MOi44ty-3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-imlo63s5jF-1MOi44ty-4" value="&lt;h1&gt;&lt;font color=&quot;#000000&quot;&gt;Data preprocessing&lt;/font&gt;&lt;/h1&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#000000;fillColor=#CCFF99;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="360" y="80" width="240" height="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
