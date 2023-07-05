@@ -35,7 +35,9 @@ class SonarDataModule(pl.LightningDataModule):
         ts1, ts2 = 1683542806144695444, 1683542806397509699
         cam_param = CameraParams(1, 10, 130, 20)
 
-        trsf = Compose([PILToTensor(), Resize(size=(480, 480), antialias=True)])
+        trsf = Compose(
+            [PILToTensor(), Resize(size=self.config.image_shape, antialias=True)]
+        )
         img1: torch.Tensor = trsf(Image.open(f"{path}/images/sonar_{ts1}.png"))  # type: ignore
         img2: torch.Tensor = trsf(Image.open(f"{path}/images/sonar_{ts2}.png"))  # type: ignore
 

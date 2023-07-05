@@ -22,5 +22,5 @@ datasets:
   batch_size: 4
 
 wandb:
-  dry_run: False
+  dry_run: True
   offline: False

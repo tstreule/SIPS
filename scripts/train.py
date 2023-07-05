@@ -11,7 +11,6 @@ import json
 from typing import Optional
 
 import torch._dynamo
-import typer
 from pytorch_lightning import Trainer, seed_everything
 from typing_extensions import Annotated
 
@@ -20,6 +19,12 @@ from sips.configs import Config, parse_train_file
 from sips.datasets import SonarDataModule
 from sips.models import KeypointNetwithIOLoss
 from sips.utils.logging import setup_wandb_logger
+
+try:
+    import typer
+except ModuleNotFoundError:
+    from sips.utils import typer  # type: ignore[no-redef]
+
 
 app = typer.Typer()
 
@@ -66,6 +71,14 @@ def _set_config(config_str: Optional[str]) -> Config:
 def _torch_compile(
     model: KeypointNetwithIOLoss, accelerator: str, **kwargs
 ) -> KeypointNetwithIOLoss:
+    from platform import python_version
+
+    from packaging import version
+
+    if version.parse(python_version()) >= version.parse("3.11"):
+        # Python 3.11+ not yet supported for torch.compile
+        return model
+
     if accelerator == "mps" or (accelerator == "auto" and torch.has_mps):
         # `torch.compile()` cannot handle MPS yet
         return model
@@ -114,7 +127,7 @@ def train(
     # c.f. https://lightning.ai/docs/pytorch/stable/common/trainer.html#reproducibility
     seed_everything(config.arch.seed, workers=True)
     trainer = Trainer(
-        deterministic=True,
+        deterministic="warn",
         # Strategy
         strategy=config.arch.strategy,
         accelerator=config.arch.accelerator,

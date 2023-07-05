@@ -567,7 +567,7 @@ def match_keypoints_2d_batch(
 
     # Create a sliding window view such that we can compare each projected keypoint
     # with the (by rounding) closest keypoint and its neighbors in the other image
-    kp1_uv_padded = F.pad(kp1_uv, (0, 0, PAD, PAD, PAD, PAD), mode="replicate")
+    kp1_uv_padded = F.pad(kp1_uv, (0, 0, PAD, PAD, PAD, PAD), mode="constant", value=0)
     # -> (B, H+2*PAD, W+2*PAD, 2)
     kp1_uv_strided = kp1_uv_padded.unfold(1, WS, 1).unfold(2, WS, 1)
     # -> (B, H, W, 2, WS, WS)

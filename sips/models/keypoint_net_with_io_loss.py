@@ -197,7 +197,6 @@ class KeypointNetwithIOLoss(pl.LightningModule):
             descriptor_loss_weight=config.descriptor_loss_weight,
             score_loss_weight=config.score_loss_weight,
             with_io=config.with_io,
-            use_color=config.use_color,
             do_upsample=config.do_upsample,
             do_cross=config.do_cross,
             descriptor_loss=config.descriptor_loss,
@@ -215,7 +214,6 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         descriptor_loss_weight: float = 2.0,
         score_loss_weight: float = 1.0,
         with_io: bool = True,
-        use_color: bool = True,
         do_upsample: bool = True,
         do_cross: bool = True,
         descriptor_loss: bool = True,
@@ -243,8 +241,6 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         self.epsilon_uv = epsilon_uv  # threshold
         self.relax_field = int(self.epsilon_uv * self.cell)
         self.distance_metric: Literal["p2p", "p2l"] = "p2l"
-
-        self.use_color = use_color
         self.descriptor_loss = descriptor_loss
 
         # Set optimizer and scheduler parameters
@@ -255,15 +251,15 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         # Initialize KeypointNet
         self.keypoint_net: KeypointNet | KeypointResnet
         if keypoint_net_type == "KeypointNet":
+            self.use_color = False
             self.keypoint_net = KeypointNet(
-                use_color=use_color,
+                use_color=self.use_color,
                 do_upsample=do_upsample,
                 with_drop=with_drop,
                 do_cross=do_cross,
             )
         elif keypoint_net_type == "KeypointResnet":
-            if not self.use_color:
-                raise ValueError("Resnet expects 3D input. Set 'use_color' to True.")
+            self.use_color = True
             self.keypoint_net = KeypointResnet(with_drop=with_drop)
         else:
             msg = f"Keypoint net type not supported {keypoint_net_type}"
@@ -274,7 +270,11 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         self.io_net = InlierNet(blocks=4) if self.with_io else None
 
         # Initialize weights
-        self.apply(init_weights)
+        if self.io_net is not None:
+            self.io_net.apply(init_weights)
+        if not isinstance(self.keypoint_net, KeypointResnet):
+            # KeypointResnet is skipped since we use pretrained weights!
+            self.keypoint_net.apply(init_weights)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
@@ -510,8 +510,8 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         target_out, source_out = self(batch)
         loss, recall = self._get_loss_recall(batch, target_out, source_out)
 
-        self.log("train_loss", loss, batch_size=batch.batch_size)
-        self.log("train_recall", recall, batch_size=batch.batch_size)
+        self.log("train_loss", loss, batch_size=batch.batch_size, sync_dist=True)
+        self.log("train_recall", recall, batch_size=batch.batch_size, sync_dist=True)
 
         return loss
 
@@ -642,14 +642,14 @@ class KeypointNetwithIOLoss(pl.LightningModule):
         )
         # fmt: off
         # NOTE: If scores are renamed, must also rename in 'callbacks.py'!
-        self.log(f"{prefix}_loss",               loss,   batch_size=batch.batch_size)
-        self.log(f"{prefix}_recall",             recall, batch_size=batch.batch_size)
-        self.log(f"{prefix}_repeatability",      rep,    batch_size=batch.batch_size)
-        self.log(f"{prefix}_localization_error", loc,    batch_size=batch.batch_size)
-        self.log(f"{prefix}_correctness_d1",     c1,     batch_size=batch.batch_size)
-        self.log(f"{prefix}_correctness_d3",     c3,     batch_size=batch.batch_size)
-        self.log(f"{prefix}_correctness_d5",     c5,     batch_size=batch.batch_size)
-        self.log(f"{prefix}_matching_score",     mscore, batch_size=batch.batch_size)
+        self.log(f"{prefix}_loss",               loss,   batch_size=batch.batch_size, sync_dist=True)
+        self.log(f"{prefix}_recall",             recall, batch_size=batch.batch_size, sync_dist=True)
+        self.log(f"{prefix}_repeatability",      rep,    batch_size=batch.batch_size, sync_dist=True)
+        self.log(f"{prefix}_localization_error", loc,    batch_size=batch.batch_size, sync_dist=True)
+        self.log(f"{prefix}_correctness_d1",     c1,     batch_size=batch.batch_size, sync_dist=True)
+        self.log(f"{prefix}_correctness_d3",     c3,     batch_size=batch.batch_size, sync_dist=True)
+        self.log(f"{prefix}_correctness_d5",     c5,     batch_size=batch.batch_size, sync_dist=True)
+        self.log(f"{prefix}_matching_score",     mscore, batch_size=batch.batch_size, sync_dist=True)
         # fmt: on
 
         return target_out, source_out

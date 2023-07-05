@@ -11,7 +11,7 @@ class _ArchConfig:
     seed: int = 42  #                        # Random seed
 
     # Strategy
-    strategy: str = "auto"  #                # ("ddp", ...)
+    strategy: str = "ddp_find_unused_parameters_true"  #                # ("ddp", ...)
     accelerator: str = "auto"  #             # ("cpu", "gpu", "tpu", ..., "auto")
     devices: str | int = "auto"  #           # The devices to use
     precision: str | int = "32-true"  #      # precision
@@ -27,8 +27,8 @@ class _ArchConfig:
 
 @dataclass
 class _WandBConfig:
-    dry_run: bool = True  #                        # If True, do a dry run (no logging)
-
+    dry_run: bool = False  #                       # If True, do a dry run (no logging)
+    log_model: bool | str = False  #               # If True, logs model to WandB server
     offline: bool = False  #                       # Run offline (data can be streamed later to WandB servers)
     name: str = ""  #                              # Display name for the run.
     save_dir: str = ""  #                          # Path where data is saved
@@ -66,7 +66,6 @@ class _ModelConfig:
     keypoint_loss_weight: float = 2.0  #     # Keypoint loss weight
     descriptor_loss_weight: float = 1.0  #   # Descriptor loss weight
     score_loss_weight: float = 1.0  #        # Score loss weight
-    use_color: bool = False  #               # Use color or grayscale images
     with_io: bool = True  #                  # Use IONet
     do_upsample: bool = True  #              # Upsample descriptors
     do_cross: bool = True  #                 # Use cross-border keypoints
@@ -89,12 +88,12 @@ class _ModelConfig:
 @dataclass
 class _DatasetsConfig:
     # Augmentation
-    image_shape: tuple[int, int] = (240, 320)  #  # Image shape
+    image_shape: tuple[int, int] = (480, 480)  #  # Image shape
 
     # Train configuration
-    batch_size: int = 8  #                        # Training batch size
-    num_workers: int = 8  #                       # Training number of workers
-    path: str = "data/datasets/"  #              # Training data path
+    batch_size: int = 2  #                        # Training batch size
+    num_workers: int = 2  #                       # Training number of workers
+    path: str = "data/datasets/"  #               # Training data path
     repeat: int = 1  #                            # Number of times training dataset is repeated per epoch
 
 

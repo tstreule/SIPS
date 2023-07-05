@@ -26,8 +26,8 @@ parameters:
             min: 1
             distribution: uniform
           opt_learn_rate:
-            max: 0.2
-            min: 0.0005
+            max: 0.001
+            min: 0.000000001
             distribution: uniform
           sched_decay_rate:
             max: 1
@@ -38,11 +38,6 @@ parameters:
             min: 0.3
             distribution: uniform
           do_upsample:
-            values:
-              - "true"
-              - "false"
-            distribution: categorical
-          use_color:
             values:
               - "true"
               - "false"
