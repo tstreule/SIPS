@@ -1,18 +1,10 @@
-import json
-from json import JSONDecodeError
-from pathlib import Path
-from warnings import warn
+import random
 
 import typer
 
-from sips.configs.base_config import _DatasetsConfig
 from sips.configs.parsing import parse_train_file
-from sips.data_extraction.init_preprocessing import (
-    call_preprocessing_steps,
-    check_preprocessing_status,
-)
+from sips.data_extraction.init_preprocessing import call_preprocessing_steps
 from sips.data_extraction.plotting import plot_overlap
-from sips.data_extraction.preprocessing import Preprocessor
 
 app = typer.Typer()
 
@@ -28,6 +20,7 @@ def main(
 
     """
     config = parse_train_file(config_path).datasets
+    random.seed(config.seed)
     rosbags = config.rosbags
     if extract:
         for this_rosbag in rosbags:
