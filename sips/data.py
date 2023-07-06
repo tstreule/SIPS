@@ -6,7 +6,8 @@ from dataclasses import dataclass, fields
 from typing import Any, Iterable, TypeVar, cast
 
 import torch
-from scipy.spatial.transform import Rotation as R
+
+from sips.utils.rotation import normalize_quat, quat_to_matrix
 
 __all__ = ["CameraPose", "CameraParams", "SonarDatum", "SonarDatumPair", "SonarBatch"]
 
@@ -59,14 +60,14 @@ class CameraPose:
         self.position = torch.as_tensor(position).float()
         assert self.position.shape == (3,)
 
-        rotation = R.from_quat(torch.as_tensor(rotation)).as_quat()
-        self.rotation = torch.from_numpy(rotation).float()
+        rotation = normalize_quat(torch.as_tensor(rotation).unsqueeze(0)).squeeze(0)
+        self.rotation = rotation.float()
         assert self.rotation.shape == (4,)
 
     def as_extrinsic(self) -> torch.Tensor:
         matrix = torch.eye(4)
         matrix[:-1, -1] = self.position
-        matrix[:3, :3] = torch.from_numpy(R.from_quat(self.rotation).as_matrix())
+        matrix[:3, :3] = quat_to_matrix(self.rotation.unsqueeze(0)).squeeze(0)
         return matrix
 
 

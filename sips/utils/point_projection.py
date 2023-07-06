@@ -6,9 +6,9 @@ from typing import Iterable
 
 import torch
 import torch.nn.functional as F
-from scipy.spatial.transform import Rotation as R
 
 from sips.data import CameraParams, CameraPose
+from sips.utils.rotation import quat_to_matrix, rotvec_to_matrix
 
 __all__ = [
     "uv_to_xyz",
@@ -92,20 +92,18 @@ def uv_to_xyz_batch(
     # Find horizontal rotations
     theta = azimuth[:, None] / 2 - u * delta_t
     theta_rotvec = F.pad(theta[..., None], (2, 0), value=0)  # add two 0-cols from left
-    theta_rot_flat = R.from_rotvec(theta_rotvec.flatten(0, 1).detach().cpu(), degrees=degrees).as_matrix()  # type: ignore
-    theta_rot = torch.from_numpy(theta_rot_flat).view(B, H * W, 3, 3).to(uv)
+    theta_rot_flat = rotvec_to_matrix(theta_rotvec.flatten(0, 1), degrees=degrees)
+    theta_rot = theta_rot_flat.view(B, H * W, 3, 3).to(uv)
     # Find vertical rotations
     phi = (
         -torch.linspace(-1, 1, n_elevations) if n_elevations > 1 else torch.tensor([0])
     ) * torch.tensor([p.elevation / 2 for p in params])[:, None]
     phi_rotvec = F.pad(phi[..., None], (1, 1), value=0)  # add a 0-col from both sides
-    phi_rot_flat = R.from_rotvec(phi_rotvec.flatten(0, 1).cpu(), degrees=degrees).as_matrix()  # type: ignore
-    phi_rot = torch.from_numpy(phi_rot_flat).view(B, n_elevations, 3, 3).to(uv)
+    phi_rot_flat = rotvec_to_matrix(phi_rotvec.flatten(0, 1), degrees=degrees)
+    phi_rot = phi_rot_flat.view(B, n_elevations, 3, 3).to(uv)
     # Use camera pose to find direction of the sonar beam for given keypoints
     # Note: By adding new axes we find every theta_rot[i] x phi_rot[j] combination.
-    cam_pose = torch.from_numpy(
-        R.from_quat(torch.stack([p.rotation for p in pose]).cpu()).as_matrix()
-    ).to(uv)
+    cam_pose = quat_to_matrix(torch.stack([p.rotation for p in pose])).to(uv)
     rotations = cam_pose[:, None, None] @ theta_rot[:, :, None] @ phi_rot[:, None]
 
     # Find translations for given orientations/rotations
@@ -155,10 +153,8 @@ def _xyz_to_rtp_batch(
         points_xyz = points_xyz - positions[..., None]
         # Rotate the shifted point by camera orientation
         rot_quats = torch.stack([cp.rotation for cp in camera_pose])
-        rot_matrix = R.from_quat(rot_quats.cpu()).inv().as_matrix()
-        points_xyz = torch.einsum(
-            "bij,bjk->bik", torch.from_numpy(rot_matrix).to(points_xyz), points_xyz
-        )
+        rot_matrix = quat_to_matrix(rot_quats).mT  # tensor.mT inverts the rotation
+        points_xyz = torch.einsum("bij,bjk->bik", rot_matrix.to(points_xyz), points_xyz)
     x, y, z = points_xyz.permute(1, 0, 2)
 
     # Coordinate change
