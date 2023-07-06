@@ -8,17 +8,17 @@ from typing import Any
 
 @dataclass
 class _ArchConfig:
-    seed: int = 42  #                        # Random seed
+    seed: int = 42  #                                  # Random seed
 
     # Strategy
-    strategy: str = "ddp_find_unused_parameters_true"  #                # ("ddp", ...)
-    accelerator: str = "auto"  #             # ("cpu", "gpu", "tpu", ..., "auto")
-    devices: str | int = "auto"  #           # The devices to use
-    precision: str | int = "32-true"  #      # precision
+    strategy: str = "ddp_find_unused_parameters_true"  # ("ddp", ...)
+    accelerator: str = "auto"  #                       # ("cpu", "gpu", ..., "auto")
+    devices: str | int = "auto"  #                     # The devices to use
+    precision: str | int = "32-true"  #                # precision
 
     # Training args
-    max_epochs: int = 50  #                  # Maximum number of epochs
-    log_every_n_steps: int = 50  #           # Logging interval
+    max_epochs: int = 50  #                            # Maximum number of epochs
+    log_every_n_steps: int = 50  #                     # Logging interval
 
 
 # --------------------------------------------------------------------------
@@ -28,22 +28,21 @@ class _ArchConfig:
 @dataclass
 class _WandBConfig:
     dry_run: bool = False  #                       # If True, do a dry run (no logging)
-    log_model: bool | str = False  #               # If True, logs model to WandB server
     offline: bool = False  #                       # Run offline (data can be streamed later to WandB servers)
-    name: str = ""  #                              # Display name for the run.
-    save_dir: str = ""  #                          # Path where data is saved
-    version: str = ""  #                           # WandB version, to resume prev. run
+    log_model: bool | str = False  #               # If True, logs model to WandB server
+    name: str | None = None  #                     # Display name for the run.
+    save_dir: str = "."  #                         # Path where data is saved
+    version: str | None = None  #                  # WandB version, to resume prev. run
     project_os_env: str = "WANDB_PROJECT"  #       # WandB project (from os.env)
     entity_os_env: str = "WANDB_ENTITY"  #         # WandB entity (from os.env)
-    tags: list[str] = field(default_factory=list)  # WandB tags
 
     @property
     def project(self) -> str:
-        return os.environ.get(self.project_os_env, "")
+        return os.environ[self.project_os_env]
 
     @property
     def entity(self) -> str:
-        return os.environ.get(self.entity_os_env, "")
+        return os.environ[self.entity_os_env]
 
 
 # --------------------------------------------------------------------------
@@ -66,19 +65,17 @@ class _ModelConfig:
     keypoint_loss_weight: float = 2.0  #     # Keypoint loss weight
     descriptor_loss_weight: float = 1.0  #   # Descriptor loss weight
     score_loss_weight: float = 1.0  #        # Score loss weight
-    with_io: bool = True  #                  # Use IONet
-    do_upsample: bool = True  #              # Upsample descriptors
-    do_cross: bool = True  #                 # Use cross-border keypoints
-    descriptor_loss: bool = True  #          # Use hardest neg. mining descriptor loss
+    with_io: bool = False  #                 # Use IONet
+    do_upsample: bool = False  #             # Upsample descriptors
+    do_cross: bool = False  #                # Use cross-border keypoints
+    descriptor_loss: bool = False  #         # Use hardest neg. mining descriptor loss
     keypoint_net_type: str = "KeypointNet"  ## Type of keypoint network. Supported ['KeypointNet', 'KeypointResnet']
     epsilon_uv: float = 0.5  #               # Relative threshold (for L_loc)
 
-    # Optimizer
-    opt_learn_rate: float = 0.001
-    opt_weight_decay: float = 0.0
-
-    # Scheduler
-    sched_decay_rate: float = 0.5  #         # Scheduler decay rate
+    # Optimizer and scheduler
+    opt_learn_rate: float = 1e-3
+    opt_weight_decay: float = 0.0  #         # Weight decay. Typical range: [0, 0.1]
+    sched_decay_rate: float = 0.1  #         # Scheduler decay rate
 
 
 # --------------------------------------------------------------------------

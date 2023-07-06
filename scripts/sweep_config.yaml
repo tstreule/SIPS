@@ -9,46 +9,50 @@ parameters:
       model:
         parameters:
           keypoint_net_type:
+            distribution: categorical
             values:
               - KeypointNet
               - KeypointResnet
-            distribution: categorical
           keypoint_loss_weight:
-            max: 4
-            min: 1
             distribution: uniform
+            min: 1
+            max: 4
           descriptor_loss_weight:
-            max: 4
-            min: 1
             distribution: uniform
+            min: 1
+            max: 4
           score_loss_weight:
-            max: 4
+            distribution: uniform
             min: 1
-            distribution: uniform
+            max: 4
           opt_learn_rate:
-            max: 0.001
-            min: 0.000000001
-            distribution: uniform
+            distribution: log_uniform_values
+            min: 1e-9
+            max: 1e-3
+          opt_weight_decay:
+            distribution: log_uniform_values
+            min: 1e-12
+            max: 1e-1
           sched_decay_rate:
-            max: 1
+            distribution: uniform
             min: 0.1
-            distribution: uniform
-          epsilon_uv:
             max: 1
-            min: 0.3
+          epsilon_uv:
             distribution: uniform
+            min: 0.3
+            max: 1
           do_upsample:
+            distribution: categorical
             values:
               - "true"
               - "false"
-            distribution: categorical
           do_cross:
+            distribution: categorical
             values:
               - "true"
               - "false"
-            distribution: categorical
           with_io:
+            distribution: categorical
             values:
               - "true"
               - "false"
-            distribution: categorical

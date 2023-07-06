@@ -1,5 +1,9 @@
-import ast
+"""
+Lightweight alternative for the module python-dotenv.
+
+"""
 import os
+import re
 from pathlib import Path
 from warnings import warn
 
@@ -31,19 +35,20 @@ def load_dotenv(filename: str = ".env") -> None:
     # Skip if file not exists
     if not dotenv_path.exists():
         return
+    # Define RegEx pattern for matching environment variables
+    left_pattern = r"(^[a-zA-Z0-9_]+)"
+    right_sub_patterns = [r"'[^']*'", r"\"[^\"]*\"", r"[^\"'\s#]+[^\s#]*"]
+    right_pattern = r"(" + r"|".join(right_sub_patterns) + r")"
+    pattern = left_pattern + r"(\=)" + right_pattern
     # Read file and write in os environment
-    with open(dotenv_path) as f:
-        for line in f:
-            match line.strip().split("="):
-                case [empty] if empty.strip() == "":  # ignore newlines
-                    continue
-                case alist if alist[0].startswith("#"):  # ignore comments
-                    continue
-                case [key, value]:
-                    try:
-                        # Handle when string values are in quotes
-                        os.environ[key] = ast.literal_eval(value)
-                    except (TypeError, ValueError):
-                        os.environ[key] = value
-                case _:
+    with open(dotenv_path) as file:
+        for line in file:
+            m = re.search(pattern, line)
+            if not m:
+                if not re.match(r"\s*(#.*|$)", line):  # empty line or just comment
                     warn(f"Invalid line for {load_dotenv.__name__}: '{line.strip()}'")
+                continue
+            key, value = map(str.strip, m.group().split("="))
+            if value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            os.environ[key] = value

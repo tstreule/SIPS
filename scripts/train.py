@@ -137,6 +137,7 @@ def train(
         strategy=config.arch.strategy,
         accelerator=config.arch.accelerator,
         devices=config.arch.devices,
+        precision=config.arch.precision,  # type: ignore[arg-type]
         # Training args
         default_root_dir=config.model.checkpoint_path,
         enable_checkpointing=config.model.save_checkpoint,
