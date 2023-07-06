@@ -93,10 +93,10 @@ class _DatasetsConfig:
     image_shape: tuple[int, int] = (512, 512)  ## Image shape
 
     # Redundant Image Filter configuration
-    image_filter: str | None = "bilateral"  #   # Type of image filter
+    image_filter: str | None = "gaussian"  #    # Type of image filter
     image_filter_size: float = 5  #             # Filter size
     image_filter_std: float = 2.5  #            # Standard deviation for Gaussian filter
-    image_filter_threshold: float = 0.95  #     # Similarity threshold,
+    image_filter_threshold: float = 0.97  #     # Similarity threshold,
     #                                           #  higher values results in more data
 
     # Sonar configuration
@@ -116,7 +116,7 @@ class _DatasetsConfig:
     train_ratio: float = 0.8
 
     # Train configuration
-    batch_size: int = 2  #                        # Training batch size
+    batch_size: int = 8  #                        # Training batch size
     num_workers: int = 2  #                       # Training number of workers
     path: str = "data/datasets/"  #               # Training data path
     repeat: int = 1  #                            # Number of times training dataset is repeated per epoch

@@ -105,6 +105,24 @@ def train(
 ):
     # Handle configuration
     config = _set_config(config_str)
+    if not config.datasets.rosbags:
+        config.datasets.rosbags = [
+            "agisoft8.bag",
+            "agisoft9.bag",
+            "boatpolice-001.bag",
+            "coast.bag",
+            "freeRoaming-001.bag",
+            "freeRoaming15SonarFeSteg-0805.bag",
+            "freeRoaming15SonarFels2-0805.bag",
+            "freeRoaming2.bag",
+            "freeRoaming45deg-0805.bag",
+            "riverSpeed.bag",
+            "riverSpeedFar.bag",
+            "smoothed3.bag",
+            "smoothed_small_medium_yaw-002.bag",
+            "tiefenbrunnen_agisoft3.bag",
+            "tiefenbrunnen_agisoft4.bag",
+        ]
     _set_debug(config.debug)
     config.arch.accelerator = _set_accelerator(config.arch.accelerator)
 
