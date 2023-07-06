@@ -88,7 +88,7 @@ def quat_to_matrix(quaternion: torch.Tensor) -> torch.Tensor:
     x, y, z, w = quaternion[:, 0], quaternion[:, 1], quaternion[:, 2], quaternion[:, 3]
 
     # Normalize quaternion
-    quaternion_norm = torch.sqrt(torch.sum(quaternion**2, dim=1))
+    quaternion_norm = torch.norm(quaternion, p=2, dim=1)
     x_normalized, y_normalized, z_normalized, w_normalized = (
         x / quaternion_norm,
         y / quaternion_norm,
@@ -142,7 +142,7 @@ def rotvec_to_matrix(
 
     batch_size = rotation_vector.size(0)
     theta = torch.norm(rotation_vector, dim=1, keepdim=True)
-    unit_rotation_vector = rotation_vector / theta
+    unit_rotation_vector = rotation_vector / (theta + 1e-6)
 
     cos_theta = torch.cos(theta)
     sin_theta = torch.sin(theta)
