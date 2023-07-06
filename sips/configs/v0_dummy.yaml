@@ -12,7 +12,6 @@ arch:
   max_epochs: 5
 
 model:
-  use_color: False # changed...
   with_io: True # changed...
   do_upsample: False
   do_cross: False

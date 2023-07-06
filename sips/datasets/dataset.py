@@ -6,7 +6,15 @@ from scripts.examples._sonar_data import get_random_datum_pair
 from sips.data import SonarDatumPair
 
 
-class SonarDataset(Dataset[SonarDatumPair]):
+class _SonarDatasetBase(Dataset[SonarDatumPair]):
+    def __len__(self) -> int:
+        raise NotImplementedError
+
+    def __getitem__(self, index) -> SonarDatumPair:
+        raise NotImplementedError
+
+
+class SonarDataset(_SonarDatasetBase):
     # TODO: Implement
 
     def __init__(self) -> None:
@@ -22,10 +30,8 @@ class SonarDataset(Dataset[SonarDatumPair]):
         return SonarDatumPair(a, b)  # type: ignore[arg-type]
 
 
-class DummySonarDataSet(SonarDataset):
-    def __init__(
-        self, *, n: int = 100, sonar_pair: SonarDatumPair | None = None
-    ) -> None:
+class DummySonarDataset(_SonarDatasetBase):
+    def __init__(self, n: int = 100, sonar_pair: SonarDatumPair | None = None) -> None:
         warn("WARNING: You are using a dummy dataset!")
         super().__init__()
 

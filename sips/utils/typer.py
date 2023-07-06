@@ -37,23 +37,28 @@ class Typer:
                 else:
                     action = None
                 # Get type
-                if annotation.__origin__._name == "Optional":
+                if issubclass(type(annotation.__origin__), type):
+                    type_ = annotation.__origin__
+                elif annotation.__origin__._name == "Optional":
                     type_ = annotation.__origin__.__args__[0]
                 else:
-                    type_ = annotation.__origin__
-                # Set argument name
+                    raise NotImplementedError(f"Unknown {annotation=}")
+                # Set argument name and help
+                help_ = f"type: {type_.__name__}"
                 if param.default is inspect._empty:
                     arg_name = name
                 else:
                     arg_name = "--" + name
-                if hasattr(annotation.__metadata__[0], "default"):
-                    arg_name = annotation.__metadata__[0].default or arg_name
+                if isinstance(annotation.__metadata__[0], OptionInfo):
+                    option_info = annotation.__metadata__[0]
+                    arg_name = option_info.default or arg_name
+                    help_ = option_info.help or help_
                 self.kwargs_renaming[name] = arg_name.lstrip("-")
                 # Add argument
                 parser.add_argument(
                     arg_name,
                     type=type_,
-                    help=f"type: {type_.__name__}",
+                    help=help_,
                     default=param.default,
                     action=action,  # type: ignore[arg-type]
                 )
@@ -73,10 +78,10 @@ class Typer:
 
 
 class OptionInfo:
-    def __init__(self, default):
+    def __init__(self, default, help):
         self.default = default
+        self.help = help
 
 
-def Option(*args, **kwargs):
-    default = args[0] if args else None
-    return OptionInfo(default)
+def Option(default: str | None = None, *, help: str | None = None, **kwargs):
+    return OptionInfo(default, help)

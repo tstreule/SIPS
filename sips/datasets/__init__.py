@@ -1,4 +1,9 @@
-from sips.datasets.data_module import SonarDataModule
-from sips.datasets.dataset import SonarDataset
+from sips.datasets.data_module import DummySonarDataModule, SonarDataModule
+from sips.datasets.dataset import DummySonarDataset, SonarDataset
 
-__all__ = ["SonarDataModule", "SonarDataset"]
+__all__ = [
+    "SonarDataModule",
+    "DummySonarDataModule",
+    "SonarDataset",
+    "DummySonarDataset",
+]

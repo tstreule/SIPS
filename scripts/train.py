@@ -6,17 +6,23 @@ from sips.utils.dotenv import load_dotenv
 
 load_dotenv()
 
+import warnings
+
+warnings.filterwarnings(action="ignore", message="Cannot set number of intraop threads")
+
 
 import json
+from platform import python_version
 from typing import Optional
 
 import torch._dynamo
+from packaging import version
 from pytorch_lightning import Trainer, seed_everything
 from typing_extensions import Annotated
 
 from sips.callbacks import get_callbacks
 from sips.configs import Config, parse_train_file
-from sips.datasets import SonarDataModule
+from sips.datasets import DummySonarDataModule, SonarDataModule
 from sips.models import KeypointNetwithIOLoss
 from sips.utils.logging import setup_wandb_logger
 
@@ -71,10 +77,6 @@ def _set_config(config_str: Optional[str]) -> Config:
 def _torch_compile(
     model: KeypointNetwithIOLoss, accelerator: str, **kwargs
 ) -> KeypointNetwithIOLoss:
-    from platform import python_version
-
-    from packaging import version
-
     if version.parse(python_version()) >= version.parse("3.11"):
         # Python 3.11+ not yet supported for torch.compile
         return model
@@ -100,7 +102,10 @@ def train(
     config_str: Annotated[
         Optional[str],
         typer.Option("--config", help="Config dict (as str) or path to config file"),
-    ] = None
+    ] = None,
+    dummy: Annotated[
+        bool, typer.Option("--dummy", help="If True, uses dummy data")
+    ] = False,
 ):
     # Handle configuration
     config = _set_config(config_str)
@@ -110,7 +115,11 @@ def train(
     # Initialize model and data module
     model = KeypointNetwithIOLoss.from_config(config.model)
     model = _torch_compile(model, config.arch.accelerator)
-    dm = SonarDataModule(config.datasets)
+    dm: DummySonarDataModule | SonarDataModule
+    if dummy:
+        dm = DummySonarDataModule(config.datasets)
+    else:
+        dm = SonarDataModule(config.datasets)
 
     # Set up Wandb logger
     wandb_logger = setup_wandb_logger(config)
