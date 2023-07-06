@@ -65,7 +65,7 @@ def compute_repeatability_batch(
     Parameters
     ----------
     target_out : tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        Predicted target scores, coordinates and descriptors.
+        Predicted target scores, coordinates and descriptors. [(B, 1, 64, 64), (B, 2, 64, 64), (B, 256, 64, 64)]
     source_out : tuple[torch.Tensor, torch.Tensor, torch.Tensor]
         Predicted source scores, coordinates and descriptors.
     batch : SonarBatch
