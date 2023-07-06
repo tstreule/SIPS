@@ -53,7 +53,7 @@ class _WandBConfig:
 class _ModelConfig:
     # Checkpointing
     checkpoint_path: str = "data/experiments/"
-    save_checkpoint: bool = True
+    save_checkpoint: bool = False
     checkpoint_every_n_epochs: int = 3
 
     # Early stopping
