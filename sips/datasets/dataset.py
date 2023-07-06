@@ -1,5 +1,4 @@
 import json
-from json import JSONDecodeError
 from warnings import warn
 
 import torchvision.transforms as T
@@ -10,9 +9,18 @@ from scripts.examples._sonar_data import get_random_datum_pair
 from sips.data import CameraParams, CameraPose, SonarDatum, SonarDatumPair
 
 
-class SonarDataset(Dataset[SonarDatumPair]):
+class _SonarDatasetBase(Dataset[SonarDatumPair]):
+    def __len__(self) -> int:
+        raise NotImplementedError
+
+    def __getitem__(self, index) -> SonarDatumPair:
+        raise NotImplementedError
+
+
+class SonarDataset(_SonarDatasetBase):
     def __init__(self, config, mask=[]) -> None:
         super().__init__()
+
         self.config = config
         try:
             with open("data/tuples.json") as f:
@@ -20,7 +28,7 @@ class SonarDataset(Dataset[SonarDatumPair]):
         except IOError:
             warn(f"tuples.json file missing")
             return
-        except JSONDecodeError:
+        except json.JSONDecodeError:
             warn(f"tuples.json file empty")
             return
         try:
@@ -29,7 +37,7 @@ class SonarDataset(Dataset[SonarDatumPair]):
         except IOError:
             warn(f"poses.json file missing")
             return
-        except JSONDecodeError:
+        except json.JSONDecodeError:
             warn(f"poses.json file empty")
             return
         self.poses = poses
@@ -100,19 +108,21 @@ class SonarDataset(Dataset[SonarDatumPair]):
             ],
         )
         return SonarDatumPair(
-            SonarDatum(image=im_tensor0, pose=pose0, params=cam_params),
-            SonarDatum(image=im_tensor1, pose=pose1, params=cam_params),
+            SonarDatum(image=im_tensor0, pose=pose0, params=cam_params),  # type: ignore
+            SonarDatum(image=im_tensor1, pose=pose1, params=cam_params),  # type: ignore
         )
 
 
-class DummySonarDataSet(SonarDataset):
-    def __init__(self, n: int = 100) -> None:
+class DummySonarDataset(_SonarDatasetBase):
+    def __init__(self, n: int = 100, sonar_pair: SonarDatumPair | None = None) -> None:
         warn("WARNING: You are using a dummy dataset!")
-        super().__init__()  # type: ignore[call-arg]
+        super().__init__()
+
         self.n = n
+        self.sonar_pair = sonar_pair
 
     def __len__(self) -> int:
         return self.n
 
     def __getitem__(self, index) -> SonarDatumPair:
-        return get_random_datum_pair()
+        return self.sonar_pair or get_random_datum_pair()

@@ -9,7 +9,7 @@ from sips.data_extraction.plotting import plot_overlap
 app = typer.Typer()
 
 
-@app.callback(invoke_without_command=True)
+@app.command()
 def main(
     config_path: str = "sips/configs/v0_dummy.yaml",
     extract: bool = False,

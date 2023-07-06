@@ -8,10 +8,10 @@
 
 arch:
   accelerator: "cpu"
-  fast_dev_run: True # enable debugging
+  log_every_n_steps: 5
+  max_epochs: 5
 
 model:
-  use_color: False # changed...
   with_io: True # changed...
   do_upsample: False
   do_cross: False
@@ -19,9 +19,11 @@ model:
 
 datasets:
   batch_size: 4
+  num_workers: 4
 
 wandb:
   dry_run: True
+  offline: False
 
 datasets:
   rosbags: ["agisoft8.bag"]

@@ -1,0 +1,58 @@
+program: scripts/train.py
+method: bayes
+metric:
+  goal: minimize
+  name: val_loss
+parameters:
+  config:
+    parameters:
+      model:
+        parameters:
+          keypoint_net_type:
+            distribution: categorical
+            values:
+              - KeypointNet
+              - KeypointResnet
+          keypoint_loss_weight:
+            distribution: uniform
+            min: 1
+            max: 4
+          descriptor_loss_weight:
+            distribution: uniform
+            min: 1
+            max: 4
+          score_loss_weight:
+            distribution: uniform
+            min: 1
+            max: 4
+          opt_learn_rate:
+            distribution: log_uniform_values
+            min: 1e-9
+            max: 1e-3
+          opt_weight_decay:
+            distribution: log_uniform_values
+            min: 1e-12
+            max: 1e-1
+          sched_decay_rate:
+            distribution: uniform
+            min: 0.1
+            max: 1
+          epsilon_uv:
+            distribution: uniform
+            min: 0.3
+            max: 1
+          do_upsample:
+            distribution: categorical
+            values:
+              - "true"
+              - "false"
+          do_cross:
+            distribution: categorical
+            values:
+              - "true"
+              - "false"
+          with_io:
+            distribution: categorical
+            values:
+              - "true"
+              - "false"

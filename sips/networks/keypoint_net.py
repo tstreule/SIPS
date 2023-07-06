@@ -1,9 +1,11 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 
+from typing import Callable
+
 import torch
 import torch.nn.functional as F
 
-from sips.utils.image import image_grid
+from sips.utils.image import image_grid, normalize_2d_coordinate
 
 
 class KeypointNet(torch.nn.Module):
@@ -39,17 +41,13 @@ class KeypointNet(torch.nn.Module):
         self.do_cross = do_cross
         self.do_upsample = do_upsample
 
-        if self.use_color:
-            c0 = 3
-        else:
-            c0 = 1
-
         self.bn_momentum = 0.1
         self.cross_ratio = 2.0
 
         if self.do_cross is False:
             self.cross_ratio = 1.0
 
+        c0 = 3 if self.use_color else 1
         c1, c2, c3, c4, c5, d1 = 32, 64, 128, 256, 256, 512
 
         self.conv1a = torch.nn.Sequential(
@@ -124,9 +122,13 @@ class KeypointNet(torch.nn.Module):
         self.cell = 8
         self.upsample = torch.nn.PixelShuffle(upscale_factor=2)
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # --------------------------------------------------------------------------
+    # Prediction
+
+    _forward_return_type = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    __call__: Callable[..., _forward_return_type]
+
+    def forward(self, x: torch.Tensor) -> _forward_return_type:
         """
         Processes a batch of images.
 
@@ -143,6 +145,7 @@ class KeypointNet(torch.nn.Module):
             Keypoint coordinates (B, 2, H_out, W_out)
         feat: torch.Tensor
             Keypoint descriptors (B, 256, H_out, W_out)
+
         """
         B, _, H, W = x.shape
 
@@ -215,13 +218,8 @@ class KeypointNet(torch.nn.Module):
         feat = self.convFbb(feat)
 
         if not self.training:
-            coord_norm = coord[:, :2].clone()
-            coord_norm[:, 0] = (coord_norm[:, 0] / (float(W - 1) / 2.0)) - 1.0
-            coord_norm[:, 1] = (coord_norm[:, 1] / (float(H - 1) / 2.0)) - 1.0
-            coord_norm = coord_norm.permute(0, 2, 3, 1)
-
+            coord_norm = normalize_2d_coordinate(coord.clone(), H, W)
             feat = F.grid_sample(feat, coord_norm, align_corners=True)
-
             dn = torch.norm(feat, p=2, dim=1)  # Compute the norm.
             feat = feat.div(torch.unsqueeze(dn, 1))  # Divide by norm to normalize.
         return score, coord, feat

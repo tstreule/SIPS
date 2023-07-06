@@ -1,6 +1,11 @@
-from pathlib import Path
+"""
+Lightweight alternative for the module python-dotenv.
 
-from dotenv import load_dotenv as _load_dotenv
+"""
+import os
+import re
+from pathlib import Path
+from warnings import warn
 
 
 def _get_file_parent_dir(src: str) -> Path:
@@ -27,5 +32,23 @@ def load_dotenv(filename: str = ".env") -> None:
     """
     root_dir = _get_file_parent_dir("sips")
     dotenv_path = root_dir / filename
-    if dotenv_path.exists():
-        _load_dotenv(dotenv_path)
+    # Skip if file not exists
+    if not dotenv_path.exists():
+        return
+    # Define RegEx pattern for matching environment variables
+    left_pattern = r"(^[a-zA-Z0-9_]+)"
+    right_sub_patterns = [r"'[^']*'", r"\"[^\"]*\"", r"[^\"'\s#]+[^\s#]*"]
+    right_pattern = r"(" + r"|".join(right_sub_patterns) + r")"
+    pattern = left_pattern + r"(\=)" + right_pattern
+    # Read file and write in os environment
+    with open(dotenv_path) as file:
+        for line in file:
+            m = re.search(pattern, line)
+            if not m:
+                if not re.match(r"\s*(#.*|$)", line):  # empty line or just comment
+                    warn(f"Invalid line for {load_dotenv.__name__}: '{line.strip()}'")
+                continue
+            key, value = map(str.strip, m.group().split("="))
+            if value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            os.environ[key] = value

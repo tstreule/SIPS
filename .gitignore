@@ -2,10 +2,13 @@
 .mypy_cache
 __pycache__
 
-data
+# Test scripts
 sandbox
-lightning_logs
-
+# Sonar image data
+data
 # WandB offline logging dir
 wandb
+# Environment variables
 .env
+# ETH Euler logging
+euler_out

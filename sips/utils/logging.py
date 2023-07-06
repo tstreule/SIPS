@@ -1,16 +1,31 @@
+from dataclasses import asdict
+from typing import Literal
+
+import wandb
 from pytorch_lightning.loggers.wandb import WandbLogger
 
-from sips.configs.base_config import _WandBConfig
+from sips.configs.base_config import Config
+from sips.utils.dotenv import _get_file_parent_dir
 
 
-def setup_wandb_logger(config: _WandBConfig) -> bool | WandbLogger:
-    if config.dry_run:
+def setup_wandb_logger(config: Config) -> Literal[False] | WandbLogger:
+    # Dry run / no logging
+    if config.wandb.dry_run:
         return False
-    return WandbLogger(
-        name=config.name,
-        save_dir=config.save_dir,
-        version=config.version,
-        project=config.project,
-        entity=config.entity,
-        offline=config.offline,
+
+    # Init logger
+    code_dir = str(_get_file_parent_dir("sips"))
+    wandb_logger = WandbLogger(
+        name=config.wandb.name,
+        save_dir=config.wandb.save_dir,
+        version=config.wandb.version,
+        project=config.wandb.project,
+        entity=config.wandb.entity,
+        offline=config.wandb.offline,
+        log_model=config.wandb.log_model,  # synched with ModelCheckpoint callbacks
+        settings=wandb.Settings(code_dir=code_dir),
     )
+    # Add configuration to experiment
+    wandb_logger.experiment.config.update(asdict(config))
+
+    return wandb_logger
