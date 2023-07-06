@@ -233,7 +233,7 @@ def xyz_to_uv_batch(
     v = (r - min_range[:, None]) / delta_r
 
     # Check if point is within operational range and field of view
-    epsilon = 1e-6
+    epsilon = 1e-5
     out_of_operatial_masks = [
         r.lt(min_range[:, None] - epsilon),
         r.gt(max_range[:, None] + epsilon),

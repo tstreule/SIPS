@@ -23,3 +23,11 @@ datasets:
 wandb:
   dry_run: True
   offline: False
+
+datasets:
+  rosbags: ["agisoft8.bag"]
+  n_elevations: 5     
+  image_filter_threshold: 0.95 
+  image_filter: "gaussian"
+  bright_spots_threshold: 210
+  
