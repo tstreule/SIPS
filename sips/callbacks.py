@@ -70,10 +70,11 @@ def get_callbacks(monitors: list[tuple[str, str]], config: Config) -> list[Callb
     # Add checkpointing and stopping callback the given scores
     for monitor, mode in monitors:
         # Model checkpointing
-        ckpt = _get_model_checkpoint_callback(
-            monitor, mode, config.model.checkpoint_every_n_epochs
-        )
-        callbacks.append(ckpt)
+        if config.model.save_checkpoint:
+            ckpt = _get_model_checkpoint_callback(
+                monitor, mode, config.model.checkpoint_every_n_epochs
+            )
+            callbacks.append(ckpt)
         # Early stopping
         stop = _get_early_stopping_callback(
             monitor, mode, config.model.early_stopping_patience

@@ -158,7 +158,7 @@ def train(
         precision=config.arch.precision,  # type: ignore[arg-type]
         # Training args
         default_root_dir=config.model.checkpoint_path,
-        enable_checkpointing=config.model.save_checkpoint,
+        enable_checkpointing=False,  # handled by callbacks
         max_epochs=config.arch.max_epochs,
         callbacks=callbacks,
         check_val_every_n_epoch=None,  # must be None since 'callbacks' is implemented
