@@ -7,7 +7,7 @@ A semester project at ETH Zürich by Marc Styger and Timo Streule.
 ## Prerequisites
 
 - Linux or macOS
-- Python 3.10+
+- Python 3.11+
 
 ## Getting started
 
