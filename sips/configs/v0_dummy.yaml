@@ -19,6 +19,7 @@ model:
 
 datasets:
   batch_size: 4
+  num_workers: 4
 
 wandb:
   dry_run: True

@@ -6,10 +6,6 @@ from sips.utils.dotenv import load_dotenv
 
 load_dotenv()
 
-import warnings
-
-warnings.filterwarnings(action="ignore", message="Cannot set number of intraop threads")
-
 
 import json
 from platform import python_version
