@@ -53,7 +53,7 @@ class _WandBConfig:
 class _ModelConfig:
     # Checkpointing
     checkpoint_path: str = "data/experiments/"
-    save_checkpoint: bool = True
+    save_checkpoint: bool = False
     checkpoint_every_n_epochs: int = 3
 
     # Early stopping
@@ -116,8 +116,8 @@ class _DatasetsConfig:
     train_ratio: float = 0.8
 
     # Train configuration
-    batch_size: int = 8  #                        # Training batch size
-    num_workers: int = 2  #                       # Training number of workers
+    batch_size: int = 4  #                        # Training batch size
+    num_workers: int = 8  #                       # Training number of workers
     path: str = "data/datasets/"  #               # Training data path
     repeat: int = 1  #                            # Number of times training dataset is repeated per epoch
 

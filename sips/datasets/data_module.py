@@ -25,6 +25,7 @@ def _make_dataloader(
         batch_size=config.batch_size,
         num_workers=config.num_workers,
         collate_fn=SonarBatch,
+        pin_memory=True,
     )
 
 
@@ -170,31 +171,39 @@ class DummySonarDataModule(_SonarDataModuleBase):
 
         """
         path = "data/filtered/freeRoaming15SonarFeSteg-0805"
-        ts1, ts2 = 1683542806144695444, 1683542806397509699
-        cam_param = CameraParams(1, 10, 130, 20)
+        self.sonar_pair: SonarDatumPair | None
 
-        trsf = Compose(
-            [PILToTensor(), Resize(size=self.config.image_shape, antialias=True)]  # type: ignore
-        )
-        img1: torch.Tensor = trsf(Image.open(f"{path}/images/sonar_{ts1}.png"))  # type: ignore
-        img2: torch.Tensor = trsf(Image.open(f"{path}/images/sonar_{ts2}.png"))  # type: ignore
+        # Try loading data from given path, use random data otherwise.
+        try:
+            ts1, ts2 = 1683542806144695444, 1683542806397509699
+            cam_param = CameraParams(1, 10, 130, 20)
 
-        with open(f"{path}/pose_data.json") as f:
-            pose_data = json.load(f)
-        pose1 = pose2 = None
-        for pose_datum in pose_data:
-            ts = pose_datum["timestamp"]
-            position = [pose_datum["point_position"][ax] for ax in "xyz"]
-            rotation = [pose_datum["quaterion_orientation"][ax] for ax in "xyzw"]
-            if ts == ts1:
-                pose1 = CameraPose(position, rotation)
-            elif ts == ts2:
-                pose2 = CameraPose(position, rotation)
-        assert pose1 is not None and pose2 is not None
+            trsf = Compose(
+                [PILToTensor(), Resize(size=self.config.image_shape, antialias=True)]  # type: ignore
+            )
+            img1: torch.Tensor = trsf(Image.open(f"{path}/images/sonar_{ts1}.png"))  # type: ignore
+            img2: torch.Tensor = trsf(Image.open(f"{path}/images/sonar_{ts2}.png"))  # type: ignore
 
-        self.sonar_pair = SonarDatumPair(
-            (img1, pose1, cam_param), (img2, pose2, cam_param)
-        )
+            with open(f"{path}/pose_data.json") as f:
+                pose_data = json.load(f)
+            pose1 = pose2 = None
+            for pose_datum in pose_data:
+                ts = pose_datum["timestamp"]
+                position = [pose_datum["point_position"][ax] for ax in "xyz"]
+                rotation = [pose_datum["quaterion_orientation"][ax] for ax in "xyzw"]
+                if ts == ts1:
+                    pose1 = CameraPose(position, rotation)
+                elif ts == ts2:
+                    pose2 = CameraPose(position, rotation)
+            assert pose1 is not None and pose2 is not None
+
+            self.sonar_pair = SonarDatumPair(
+                (img1, pose1, cam_param), (img2, pose2, cam_param)
+            )
+
+        except:
+            warn(f"WARNING: Did not find the files in {path=}. Using random data.")
+            self.sonar_pair = None
 
     def setup(self, stage: str) -> None:
         """
