@@ -26,9 +26,9 @@ wandb:
   offline: False
 
 datasets:
-  rosbags: ["agisoft8.bag"]
+  rosbags: ["boatpolice-001.bag"]
   n_elevations: 5     
-  image_filter_threshold: 0.95 
+  image_filter_threshold: 0.97 
   image_filter: "gaussian"
-  bright_spots_threshold: 210
+  bright_spots_threshold: 200
   

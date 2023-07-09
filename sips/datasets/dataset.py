@@ -41,6 +41,9 @@ class SonarDataset(_SonarDatasetBase):
             warn(f"poses.json file empty")
             return
         self.poses = poses
+
+        # Empty mask is used to initialize the dataset such that we know its length
+        # other masks used to make data split
         if len(mask) > 0:
             self.tuples = [
                 tuple_ for idx, tuple_ in enumerate(tuples) if idx in mask.indices
