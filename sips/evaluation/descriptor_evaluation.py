@@ -115,10 +115,10 @@ def compute_matching_score_batch(
     # "Remove" (fill with nan) that are not in keep_top_k best scores
     mask_1 = _mask_top_k(score_1, keep_top_k)
     mask_2 = _mask_top_k(score_2, keep_top_k)
-    coord_1 = coord_1.masked_fill(mask_1, torch.nan)  # we don't do it in-place
-    coord_2 = coord_2.masked_fill(mask_2, torch.nan)
-    desc_1 = desc_1.masked_fill(mask_1, torch.nan)
-    desc_2 = desc_2.masked_fill(mask_2, torch.nan)
+    coord_1 = coord_1.masked_fill(~mask_1, torch.nan)  # we don't do it in-place
+    coord_2 = coord_2.masked_fill(~mask_2, torch.nan)
+    desc_1 = desc_1.masked_fill(~mask_1, torch.nan)
+    desc_2 = desc_2.masked_fill(~mask_2, torch.nan)
 
     # Instantiate brute-force matcher
     # This part needs to be done with crossCheck=False.

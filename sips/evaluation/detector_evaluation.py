@@ -36,6 +36,8 @@ def _mask_top_k(scores: torch.Tensor, top_k: int) -> torch.Tensor:
     B, C, _, _ = scores.shape
     assert C == 1
 
+    scores = scores.clone()
+    scores[~torch.isfinite(scores)] = -torch.inf
     top_k_idx = scores.flatten(1).argsort()[:, -top_k:]
     mask = torch.full_like(scores, 0, dtype=torch.bool)
     mask.view(B, -1).scatter_(1, top_k_idx, True)
@@ -109,14 +111,14 @@ def compute_repeatability_batch(
     # "Remove" (fill with nan) keypoints outside
     mask_1 = _mask_inside(coord_1_proj, (H, W))
     mask_2 = _mask_inside(coord_2_proj, (H, W))
-    score_1 = score_1.masked_fill(mask_1, 0.0)  # we don't do it in-place
-    score_2 = score_2.masked_fill(mask_2, 0.0)
+    score_1 = score_1.masked_fill(~mask_1, 0.0)  # we don't do it in-place
+    score_2 = score_2.masked_fill(~mask_2, 0.0)
 
     # "Remove" (fill with nan) that are not in keep_top_k best scores
     mask_1 = _mask_top_k(score_1, keep_top_k)
     mask_2 = _mask_top_k(score_2, keep_top_k)
-    coord_1 = coord_1.masked_fill(mask_1, torch.nan)  # we don't do it in-place
-    coord_2 = coord_2.masked_fill(mask_2, torch.nan)
+    coord_1 = coord_1.masked_fill(~mask_1, torch.nan)  # we don't do it in-place
+    coord_2 = coord_2.masked_fill(~mask_2, torch.nan)
 
     # Compute minimum distances
     _, _, min1, _, _ = match_keypoints_2d_batch(coord_1, coord_2_proj, cell, torch.inf)
@@ -130,8 +132,8 @@ def compute_repeatability_batch(
     for b in range(B):
         min1b = min1[b, mask_1[b].flatten()]
         min2b = min2[b, mask_2[b].flatten()]
-        N1 = min1b.shape[0]
-        N2 = min2b.shape[0]
+        N1 = int(torch.isfinite(min1b).sum())
+        N2 = int(torch.isfinite(min2b).sum())
 
         correct1b = min1b <= matching_threshold
         correct2b = min2b <= matching_threshold

@@ -8,12 +8,12 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+import wandb
 from pytorch_lightning.loggers.wandb import WandbLogger
 from torch import optim
 from torchvision.transforms import ToPILImage
 from typing_extensions import Self
 
-import wandb
 from sips.configs.base_config import _ModelConfig
 from sips.data import SonarBatch
 from sips.evaluation import evaluate_keypoint_net
@@ -379,7 +379,7 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 # fmt: off
                 source_feat, target_feat,
                 source_uv_norm.detach(), source_uv_warp_norm.detach(), source_uv_warp,
-                keypoint_mask=mask.view(B, HC, WC), relax_field=self.relax_field,
+                keypoint_mask=border_mask.view(B, HC, WC), relax_field=self.relax_field,
             )
             loss_2d += self.descriptor_loss_weight * metric_loss * 2
         else:
@@ -387,16 +387,23 @@ class KeypointNetwithIOLoss(pl.LightningModule):
                 # fmt: off
                 source_feat, target_feat,
                 source_uv_norm, source_uv_warp_norm, source_uv_warp,
-                keypoint_mask=mask.view(B, HC, WC), relax_field=self.relax_field,
+                keypoint_mask=border_mask.view(B, HC, WC), relax_field=self.relax_field,
                 eval_only=True,
             )
 
         # 3) Score head loss
         # NOTE: The code is following mostly the original implementation of KP2D
         #  (KeypointNetwithIOLoss.py) but the loss is slightly different as in the paper
-        target_score_associated = target_score.squeeze(1)[tuple(amin_distance[mask].T)]
-        usp_loss = 0.5 * (target_score_associated + source_score.flatten(1)[mask])
-        usp_loss *= min_distance[mask] - min_distance[mask].mean()
+        target_score_associated = target_score.squeeze(1)[
+            tuple(amin_distance[mask & keypoint_mask].T)
+        ]
+        usp_loss = 0.5 * (
+            target_score_associated + source_score.flatten(1)[mask & keypoint_mask]
+        )
+        usp_loss *= (
+            min_distance[mask & keypoint_mask]
+            - min_distance[mask & keypoint_mask].mean()
+        )
 
         # Fill nan values with dummy values such that the gradient does not get nan.
         # Note that the nan-filled values anyway get masked out
