@@ -1,14 +1,14 @@
+from time import time
+
 import cv2 as cv
 import numpy as np
 import numpy.typing as npt
 import torch
 import tqdm
-from matplotlib import pyplot as plt
 from pytorch_lightning import seed_everything
 from torch import nn
 
 from sips.configs.parsing import parse_train_file
-from sips.data_extraction.plotting import plot_overlap
 from sips.datasets.data_module import SonarDataModule
 from sips.evaluation.descriptor_evaluation import compute_matching_score_batch
 from sips.evaluation.detector_evaluation import compute_repeatability_batch
@@ -58,18 +58,11 @@ def format_scores_coords_descs(
     return scores, coords, descs
 
 
-def main(plot: bool = True, conv_size: int = 8):
-    config_file = "sips/configs/v0_dummy.yaml"
-    config = parse_train_file(config_file)
-    seed_everything(config.arch.seed, workers=True)
-    dm = SonarDataModule(config.datasets)
-    dm.prepare_data()
-    dm.setup("validate")
-    orb = cv.ORB_create(10000)
-    val_dataloader = dm.val_dataloader()
+def evaluate(model, dataloader, conv_size=8):
     detector_eval = []
     descriptor_eval = []
-    for batch in iter(val_dataloader):
+
+    for batch in tqdm.tqdm(dataloader):
         out1 = (
             torch.full((batch.batch_size, 1, 64, 64), torch.nan),
             torch.full((batch.batch_size, 2, 64, 64), torch.nan),
@@ -82,9 +75,9 @@ def main(plot: bool = True, conv_size: int = 8):
         )
         for datum_pair_idx in range(batch.batch_size):
             im1 = batch.image1[datum_pair_idx, ...]
-            im2 = batch.image1[datum_pair_idx, ...]
-            kp1, des1 = orb.detectAndCompute(np.array(im1.squeeze()), None)
-            kp2, des2 = orb.detectAndCompute(np.array(im2.squeeze()), None)
+            im2 = batch.image2[datum_pair_idx, ...]
+            kp1, des1 = model.detectAndCompute(np.array(im1.squeeze()), None)
+            kp2, des2 = model.detectAndCompute(np.array(im2.squeeze()), None)
             scores1, coords1, descs1 = format_scores_coords_descs(kp1, des1, 32)
             scores2, coords2, descs2 = format_scores_coords_descs(kp2, des2, 32)
             out1[0][datum_pair_idx, ...] = scores1
@@ -93,9 +86,9 @@ def main(plot: bool = True, conv_size: int = 8):
             out2[0][datum_pair_idx, ...] = scores2
             out2[1][datum_pair_idx, ...] = coords2
             out2[2][datum_pair_idx, ...] = descs2
-        batch.image2 = batch.image1
-        batch.params2 = batch.params1
-        batch.pose2 = batch.pose1
+        # batch.image2 = batch.image1
+        # batch.params2 = batch.params1
+        # batch.pose2 = batch.pose1
         det_eval = compute_repeatability_batch(
             out1, out2, batch, conv_size, matching_threshold=10
         )
@@ -109,50 +102,64 @@ def main(plot: bool = True, conv_size: int = 8):
     print(f"Average ms: {np.array(descriptor_eval).mean()}")
     print(f"detector evaluation lenght: {len(detector_eval)}")
     print(f"descriptor evaluation lenght: {len(descriptor_eval)}")
-    for batch in iter(val_dataloader):
-        im1 = batch.image1[1, ...]
-        im2 = batch.image1[1, ...]
-        pose1 = batch.pose1[1]
-        pose2 = batch.pose1[1]
-        params1 = batch.params1[1]
-        params2 = batch.params1[1]
-        # sift = cv.SIFT_create()
-        kp1, des1 = orb.detectAndCompute(np.array(im1.squeeze()), None)
-        kp2, des2 = orb.detectAndCompute(np.array(im2.squeeze()), None)
-        scores1, coords1, descs1 = format_scores_coords_descs(kp1, des1, 32)
-        scores2, coords2, descs2 = format_scores_coords_descs(kp2, des2, 32)
 
-        from sips.utils.point_projection import warp_image_batch
 
-        kp1_proj = warp_image_batch(
-            coords1.unsqueeze(0), [params1], [pose1], [params2], [pose2], (512, 512)
-        )
-        kp2_proj = warp_image_batch(
-            coords2.unsqueeze(0), [params2], [pose2], [params1], [pose1], (512, 512)
-        )
+def main(config_file="sips/configs/v0_dummy.yaml"):
+    config = parse_train_file(config_file)
+    conv_size = config.datasets.conv_size
+    seed_everything(config.arch.seed, workers=True)
+    dm = SonarDataModule(config.datasets)
+    dm.prepare_data()
+    dm.setup("validate")
+    orb = cv.ORB_create(100)
+    dataloader = dm.val_dataloader()
 
-        _, ax = plt.subplots(2, 2)
-        ax[0, 0].imshow(im1.squeeze(), cmap="gray")
-        ax[1, 0].imshow(im2.squeeze(), cmap="gray")
-        ax[0, 1].imshow(im1.squeeze(), cmap="gray")
-        ax[1, 1].imshow(im2.squeeze(), cmap="gray")
-        ax[0, 1].plot(coords1[0].flatten(), coords1[1].flatten(), ".r")
-        ax[1, 1].plot(coords2[0].flatten(), coords2[1].flatten(), ".r")
-        ax[1, 1].plot(
-            kp1_proj[:, :, 0, ...].flatten(),
-            kp1_proj[:, :, 1].flatten(),
-            ".g",
-            alpha=0.5,
-        )
-        ax[0, 1].plot(
-            kp2_proj[:, :, 0, ...].flatten(),
-            kp2_proj[:, :, 1].flatten(),
-            ".g",
-            alpha=0.5,
-        )
-        plt.show()
+    evaluate(orb, dataloader)
 
-    print()
+    # for batch in iter(val_dataloader):
+    #     im1 = batch.image1[1, ...]
+    #     im2 = batch.image1[1, ...]
+    #     pose1 = batch.pose1[1]
+    #     pose2 = batch.pose1[1]
+    #     params1 = batch.params1[1]
+    #     params2 = batch.params1[1]
+    #     # sift = cv.SIFT_create()
+    #     kp1, des1 = orb.detectAndCompute(np.array(im1.squeeze()), None)
+    #     kp2, des2 = orb.detectAndCompute(np.array(im2.squeeze()), None)
+    #     scores1, coords1, descs1 = format_scores_coords_descs(kp1, des1, 32)
+    #     scores2, coords2, descs2 = format_scores_coords_descs(kp2, des2, 32)
+
+    #     from sips.utils.point_projection import warp_image_batch
+
+    #     kp1_proj = warp_image_batch(
+    #         coords1.unsqueeze(0), [params1], [pose1], [params2], [pose2], (512, 512)
+    #     )
+    #     kp2_proj = warp_image_batch(
+    #         coords2.unsqueeze(0), [params2], [pose2], [params1], [pose1], (512, 512)
+    #     )
+
+    #     _, ax = plt.subplots(2, 2)
+    #     ax[0, 0].imshow(im1.squeeze(), cmap="gray")
+    #     ax[1, 0].imshow(im2.squeeze(), cmap="gray")
+    #     ax[0, 1].imshow(im1.squeeze(), cmap="gray")
+    #     ax[1, 1].imshow(im2.squeeze(), cmap="gray")
+    #     ax[0, 1].plot(coords1[0].flatten(), coords1[1].flatten(), ".r")
+    #     ax[1, 1].plot(coords2[0].flatten(), coords2[1].flatten(), ".r")
+    #     ax[1, 1].plot(
+    #         kp1_proj[:, :, 0, ...].flatten(),
+    #         kp1_proj[:, :, 1].flatten(),
+    #         ".g",
+    #         alpha=0.5,
+    #     )
+    #     ax[0, 1].plot(
+    #         kp2_proj[:, :, 0, ...].flatten(),
+    #         kp2_proj[:, :, 1].flatten(),
+    #         ".g",
+    #         alpha=0.5,
+    #     )
+    #     plt.show()
+
+    # print()
     # im1 = cv.imread("data/filtered/boatpolice-001/images/sonar_1688385920067311431.png")
     # im1 = cv.resize(im1, (512, 512))
     # im2 = cv.imread("data/filtered/boatpolice-001/images/sonar_1688386288447353316.png")
