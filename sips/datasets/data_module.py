@@ -143,18 +143,23 @@ class SonarDataModule(_SonarDataModuleBase):
 
         """
         dataset = SonarDataset(self.config)
-        train_set, val_set = random_split(
-            dataset, [self.config.train_ratio, self.config.val_ratio]
+        train_set, val_set, test_set = random_split(
+            dataset,
+            [self.config.train_ratio, self.config.val_ratio, self.config.test_ratio],
         )
 
         self.data_train = SonarDataset(self.config, train_set)
         self.data_val = SonarDataset(self.config, val_set)
+        self.data_test = SonarDataset(self.config, test_set)
 
     def train_dataloader(self) -> DataLoader[SonarDatumPair]:
         return _make_dataloader(self.data_train, self.config)
 
     def val_dataloader(self) -> DataLoader[SonarDatumPair]:
         return _make_dataloader(self.data_val, self.config)
+
+    def test_dataloader(self) -> DataLoader[SonarDatumPair]:
+        return _make_dataloader(self.data_test, self.config)
 
 
 class DummySonarDataModule(_SonarDataModuleBase):
