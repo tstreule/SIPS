@@ -27,7 +27,7 @@ class _ArchConfig:
 
 @dataclass
 class _WandBConfig:
-    dry_run: bool = False  #                       # If True, do a dry run (no logging)
+    dry_run: bool = True  #                       # If True, do a dry run (no logging)
     offline: bool = False  #                       # Run offline (data can be streamed later to WandB servers)
     log_model: bool | str = False  #               # If True, logs model to WandB server
     name: str | None = None  #                     # Display name for the run.
@@ -113,7 +113,12 @@ class _DatasetsConfig:
     conv_size: int = 8  #                       # Convolution size
     #                                           #  for bright spots detection and arc projections
 
-    train_ratio: float = 0.8
+    train_ratio: float = 0.6
+    test_ratio: float = 0.2
+    if train_ratio + test_ratio >= 1:
+        raise ValueError(
+            "train_ratio and test_ratio must add up to a number smaller than 1 "
+        )
 
     # Train configuration
     batch_size: int = 4  #                        # Training batch size
@@ -123,7 +128,7 @@ class _DatasetsConfig:
 
     @property
     def val_ratio(self) -> float:
-        return 1 - self.train_ratio
+        return 1 - self.train_ratio - self.test_ratio
 
     # Return all parameters of this config that can be tuned
     def get_variable_params(self) -> dict[str, float | int | str | None]:
