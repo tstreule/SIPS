@@ -102,12 +102,12 @@ def build_descriptor_loss(
     for b in range(B):
         # Grid sample reference and target descriptor
         ref_desc = F.grid_sample(
-            source_des[b].unsqueeze(0),
-            source_points[b].unsqueeze(0),
+            source_des[b].unsqueeze(0).nan_to_num(0),
+            source_points[b].unsqueeze(0).nan_to_num(PSEUDO_INF),
             align_corners=True,
         ).squeeze()
         tar_desc = F.grid_sample(
-            target_des[b].unsqueeze(0),
+            target_des[b].unsqueeze(0).nan_to_num(0),
             # convert nan to large value such that the gradient does not get nan
             tar_points[b].unsqueeze(0).nan_to_num(PSEUDO_INF),
             align_corners=True,

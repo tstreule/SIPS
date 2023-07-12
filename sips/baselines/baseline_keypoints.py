@@ -139,7 +139,7 @@ def evaluate(
 ):
     detector_eval = []
     descriptor_eval = []
-    # recall_eval = []
+    recall_eval = []
 
     if model_name == "ORB":
         model = cv.ORB_create(nfeatures=nfeatures)
@@ -183,8 +183,8 @@ def evaluate(
         des_eval = compute_matching_score_batch(
             out1, out2, batch, matching_threshold=matching_threshold
         )
-        # recall = compute_recall_batch(out1, out2, batch, conv_size=conv_size)
-        # recall_eval.append(recall)
+        recall = compute_recall_batch(out1, out2, batch, conv_size=conv_size)
+        recall_eval.append(recall)
         detector_eval.append(det_eval)
         descriptor_eval.append(des_eval)
 
@@ -196,13 +196,13 @@ def evaluate(
     print(f"Average rs: {np.array(rs).mean()}")
     print(f"Average le: {np.array(le).mean()}")
     print(f"Average ms: {np.array(descriptor_eval).mean()}")
-    # print(f"Average recall: {np.array(recall_eval).mean()}")
+    print(f"Average recall: {np.array(recall_eval).mean()}")
 
 
 @app.command()
 def main(
     config_file: str = "sips/configs/v0_dummy.yaml",
-    nfeatures: int = 10000,
+    nfeatures: int = 20000,
     model_name: str = "ORB",
     conv_size: int = 8,
     matching_threshold: int = 3,
