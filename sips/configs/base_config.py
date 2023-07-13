@@ -121,7 +121,7 @@ class _DatasetsConfig:
         )
 
     # Train configuration
-    batch_size: int = 4  #                        # Training batch size
+    batch_size: int = 8  #                        # Training batch size
     num_workers: int = 8  #                       # Training number of workers
     path: str = "data/datasets/"  #               # Training data path
     repeat: int = 1  #                            # Number of times training dataset is repeated per epoch

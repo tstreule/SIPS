@@ -5,7 +5,6 @@ from pathlib import Path
 from warnings import warn
 
 import torch
-import torchvision.transforms as T
 from matplotlib import pyplot as plt
 from PIL import Image
 
@@ -26,7 +25,7 @@ def _pose_empty(pose: CameraPose) -> bool:
     return is_empty_position and is_empty_rotation
 
 
-def plot_overlap(config, rosbag) -> None:
+def plot_overlap(config, rosbag, idx=None, random_tuple=True) -> None:
     source_dir = Path("data/filtered") / Path(rosbag).with_suffix("")
     image_dir = source_dir / "images"
     config_num = find_config_num(config, source_dir)
@@ -43,7 +42,11 @@ def plot_overlap(config, rosbag) -> None:
     except JSONDecodeError:
         warn(f"tuple_stamps.json file empty")
         return
-    idx = random.randrange(len(tuple_stamps))
+    if random_tuple:
+        idx = random.randrange(len(tuple_stamps))
+    else:
+        if idx == None:
+            raise IOError(f"provide an idx from 0 to {len(tuple_stamps)}")
     stamp0, stamp1 = tuple_stamps[idx]
     im_path0 = image_dir / f"sonar_{stamp0}.png"
     im_path1 = image_dir / f"sonar_{stamp1}.png"
