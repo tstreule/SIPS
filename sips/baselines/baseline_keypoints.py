@@ -10,7 +10,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from sips.configs.parsing import parse_train_file
-from sips.data import SonarDatumPair
+from sips.data import SonarBatch, SonarDatumPair
 from sips.datasets.data_module import SonarDataModule
 from sips.evaluation.descriptor_evaluation import compute_matching_score_batch
 from sips.evaluation.detector_evaluation import compute_repeatability_batch
@@ -35,7 +35,33 @@ def format_scores_coords_descs(
     desc_size: int,
     conv_size: int = 8,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    # Create a fake image with the highest orb response at each pixel, if no
+    """
+    Formats the keypoint coordinates, keypoint scores and keypoint detectors
+    of the baseline model to have the same format as outputs of the SIPS model.
+
+    Parameters
+    ----------
+    kps : tuple[cv.KeyPoint]
+        Keypoints found by the OpenCV model, includes the keypoint coordinates
+            (pt) and keypoint scores (response).
+    desc : npt.NDArray[np.uint8]
+        Keypoint descriptors corresponding to the keypoints.
+    desc_size : int
+        Descriptor size, 32 for ORB and 128 for SIFT.
+    conv_size : int, optional
+        convolution size, by default 8
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        Keypoint scores, coordinates and descriptors. Note that the Tensors
+        will include Nan values in contrast to the SIPS outputs coming from
+        the fact that the OpenCV model is not forced to find a keypoint within
+        each (conv_size, conv_size) cell and will also not look for keypoints
+        at border regions
+    """
+
+    # Create a fake image with the highest response at each pixel, if no
     # key point was found at a pixel leave at PSEUDO_NEG_INF. Note that ORB finds
     # subpixel-level keypoints, by casting to int we ensure that all keypoints
     # within the same pixel correspond to that pixel.
@@ -58,6 +84,9 @@ def format_scores_coords_descs(
             kp_pt[0, int(kp.pt[0]), int(kp.pt[1])] = kp.pt[0]
             kp_pt[1, int(kp.pt[0]), int(kp.pt[1])] = kp.pt[1]
             kp_desc[:, int(kp.pt[0]), int(kp.pt[1])] = torch.tensor(desc[idx])
+
+    # Only keep the keypoint with the highest score (response) within each
+    # (conv_size, conv_size) cell.
     maxpool = nn.MaxPool2d(conv_size, stride=conv_size, return_indices=True)
     pool, indices = maxpool(kp_orb1_uv.reshape((1, 512, 512)).to(torch.float))
     mask = pool > PSEUDO_NEG_INF
@@ -73,14 +102,41 @@ def format_scores_coords_descs(
 
 
 def compute_recall_batch(
-    target_out,
-    source_out,
-    batch,
-    n_elevations=5,
-    conv_size=8,
-    border_remove=4,
-    relax_field=4,
+    target_out: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    source_out: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    batch: SonarBatch,
+    n_elevations: int = 5,
+    conv_size: int = 8,
+    border_remove: int = 4,
+    relax_field: int = 4,
 ) -> float:
+    """
+    Provides the necessary operations as in
+    KeypointNETwithIOLoss._get_loss_recall() to run the recall calculation
+
+    Parameters
+    ----------
+    target_out : tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        Predicted target scores, coordinates and descriptors.
+    source_out : tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        Predicted source scores, coordinates and descriptors.
+    batch : SonarBatch
+        Sonar data batch.
+    n_elevations : int, optional
+        number of elevations for the projection arcs, by default 5
+    conv_size : int, optional
+        convolution size, by default 8
+    border_remove : int, optional
+        Used to mask border elements, by default 4
+    relax_field : int, optional
+        Compute correct matches, allowing for a few pixels tolerance
+            (i.e. relax_field)., by default 4
+
+    Returns
+    -------
+    float
+        Computed recall
+    """
     target_score, target_points, target_des = target_out
     _, source_points, source_des = source_out
 
@@ -139,6 +195,30 @@ def evaluate(
     matching_threshold: int,
     conv_size: int = 8,
 ):
+    """
+    Evaluate the repeatability score, localization error, matching score
+    from the detector and descriptor evaluatoin and the recall of descriptor
+    loss for the given configuration. The result will be averaged and printed
+    from this function
+
+    Parameters
+    ----------
+    model_name : str
+        either ORB or SIFT.
+    dataloader : DataLoader[SonarDatumPair]
+        provides all the data from the rosbags of the config file.
+    nfeatures : int
+        maximum number of features the model looks for.
+    matching_threshold : int
+        matching threshold for the evaluation methods.
+    conv_size : int, optional
+        convolution size, by default 8.
+
+    Raises
+    ------
+    ValueError
+        _description_
+    """
     rep_scores_eval = []
     loc_errs_eval = []
     match_scores_eval = []
@@ -177,9 +257,7 @@ def evaluate(
             out2[0][datum_pair_idx, ...] = scores2
             out2[1][datum_pair_idx, ...] = coords2
             out2[2][datum_pair_idx, ...] = descs2
-        # batch.image2 = batch.image1
-        # batch.params2 = batch.params1
-        # batch.pose2 = batch.pose1
+
         det_eval = compute_repeatability_batch(
             out1, out2, batch, cell=conv_size, matching_threshold=matching_threshold
         )
@@ -209,6 +287,23 @@ def main(
     conv_size: int = 8,
     matching_threshold: int = 3,
 ):
+    """
+    Script to evaluate the models ORB and SIFT on the same evaluation metrics
+    as SIPS in order to have them as a baseline
+
+    Parameters
+    ----------
+    config_file : str, optional
+        location of configuration file, by default "sips/configs/v0_dummy.yaml"
+    nfeatures : int, optional
+        maximum number of features the model will provide, by default 20000
+    model_name : str, optional
+        model name, either ORB or SIFT, by default "ORB"
+    conv_size : int, optional
+        convolution size or cell size of grids, by default 8
+    matching_threshold : int, optional
+        threshold used for the evaluation metrics, by default 3
+    """
     config = parse_train_file(config_file)
     conv_size = config.datasets.conv_size
     seed_everything(config.arch.seed, workers=True)
