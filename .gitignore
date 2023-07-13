@@ -12,3 +12,7 @@ wandb
 .env
 # ETH Euler logging
 euler_out
+
+# Draw.io additional files
+*.bkp
+*.dtmp
