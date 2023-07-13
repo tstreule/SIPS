@@ -137,8 +137,9 @@ def evaluate(
     matching_threshold: int,
     conv_size: int = 8,
 ):
-    detector_eval = []
-    descriptor_eval = []
+    rep_scores_eval = []
+    loc_errs_eval = []
+    match_scores_eval = []
     recall_eval = []
 
     if model_name == "ORB":
@@ -185,17 +186,16 @@ def evaluate(
         )
         recall = compute_recall_batch(out1, out2, batch, conv_size=conv_size)
         recall_eval.append(recall)
-        detector_eval.append(det_eval)
-        descriptor_eval.append(des_eval)
+        rep_scores_eval += det_eval[2]
+        loc_errs_eval += det_eval[3]
+        match_scores_eval += des_eval
 
-    rs = [det[2] for det in detector_eval]
-    le = [det[3] for det in detector_eval]
     print(
         f"Metrics for {model_name} with {nfeatures} features and matching threshold of {matching_threshold}"
     )
-    print(f"Average rs: {np.array(rs).mean()}")
-    print(f"Average le: {np.array(le).mean()}")
-    print(f"Average ms: {np.array(descriptor_eval).mean()}")
+    print(f"Average rs: {np.array(rep_scores_eval).mean()}")
+    print(f"Average le: {np.array(loc_errs_eval).mean()}")
+    print(f"Average ms: {np.array(match_scores_eval).mean()}")
     print(f"Average recall: {np.array(recall_eval).mean()}")
 
 
