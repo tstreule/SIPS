@@ -1,3 +1,5 @@
+from warnings import warn
+
 import cv2 as cv
 import numpy as np
 import numpy.typing as npt
@@ -215,7 +217,9 @@ def main(
     dm.setup("validate")
 
     dataloader = dm.test_dataloader()
-
+    if len(dataloader) < 1:
+        warn("Dataloader is empty, skipping rest of the operations")
+        return
     evaluate(model_name, dataloader, nfeatures, matching_threshold, conv_size)
 
 
